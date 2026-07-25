@@ -1,0 +1,12 @@
+# Build outputs
+dist/
+
+# LÖVE packages
+*.love
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS files
+Thumbs.db
+.DS_Store
