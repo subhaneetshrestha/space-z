@@ -18,7 +18,7 @@ param(
   [string]$AppName = "Space Z",
   [string]$VersionName = "0.4.0",
   [int]$VersionCode = 4,
-  [string]$WorkDir = "dist\android-build"
+  [string]$WorkDir = "dist/android-build"
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,26 +44,26 @@ try {
   }
 
   # ---- package the game ----------------------------------------------------
-  & pwsh -NoProfile -File "build\make-love.ps1"
+  & pwsh -NoProfile -File "build/make-love.ps1"
   if ($LASTEXITCODE -ne 0) { throw "make-love failed" }
 
   # ---- clone / update love-android ----------------------------------------
   # default branch = LÖVE 11.5 with the maintainers' current toolchain pins
   # (AGP 8.13.x + Gradle 8.13, which support modern JDKs; the old 11.5a tag
   # pinned Gradle 8.1, which fails on JDK 21+)
-  $repo = "$WorkDir\love-android"
-  if (-not (Test-Path "$repo\.git")) {
+  $repo = "$WorkDir/love-android"
+  if (-not (Test-Path "$repo/.git")) {
     New-Item -ItemType Directory -Force $WorkDir | Out-Null
     git clone --depth 1 --recurse-submodules https://github.com/love2d/love-android $repo
     if ($LASTEXITCODE -ne 0) { throw "clone failed" }
   }
 
   # ---- embed the game ------------------------------------------------------
-  New-Item -ItemType Directory -Force "$repo\app\src\embed\assets" | Out-Null
-  Copy-Item "dist\space-z.love" "$repo\app\src\embed\assets\game.love" -Force
+  New-Item -ItemType Directory -Force "$repo/app/src/embed/assets" | Out-Null
+  Copy-Item "dist/space-z.love" "$repo/app/src/embed/assets/game.love" -Force
 
   # ---- app identity (gradle.properties) ------------------------------------
-  $props = "$repo\gradle.properties"
+  $props = "$repo/gradle.properties"
   $content = Get-Content $props -Raw
   # upstream ships the name as app.name_byte_array (with app.name commented
   # out) and errors if both are set — disable the byte array, set app.name
@@ -85,9 +85,9 @@ try {
     "mipmap-xxhdpi" = 144; "mipmap-xxxhdpi" = 192
   }
   foreach ($dir in $iconMap.Keys) {
-    $target = "$repo\app\src\main\res\$dir"
+    $target = "$repo/app/src/main/res/$dir"
     if (Test-Path $target) {
-      $src = "assets\icons\icon_$($iconMap[$dir]).png"
+      $src = "assets/icons/icon_$($iconMap[$dir]).png"
       if (Test-Path $src) {
         Get-ChildItem $target -Filter "*.png" | ForEach-Object {
           Copy-Item $src $_.FullName -Force
@@ -100,17 +100,24 @@ try {
   Push-Location $repo
   try {
     $task = if ($Release) { "assembleEmbedNoRecordRelease" } else { "assembleEmbedNoRecordDebug" }
-    & .\gradlew.bat $task
+    # the wrapper differs per platform; the repo is also built by CI on Linux
+    $onWindows = $IsWindows -or ($env:OS -eq "Windows_NT")
+    if ($onWindows) {
+      & .\gradlew.bat $task
+    } else {
+      & chmod +x ./gradlew
+      & ./gradlew $task
+    }
     if ($LASTEXITCODE -ne 0) { throw "gradle build failed" }
   } finally {
     Pop-Location
   }
 
-  $apks = Get-ChildItem "$repo\app\build\outputs\apk" -Recurse -Filter "*.apk"
-  New-Item -ItemType Directory -Force "dist\android" | Out-Null
+  $apks = Get-ChildItem "$repo/app/build/outputs/apk" -Recurse -Filter "*.apk"
+  New-Item -ItemType Directory -Force "dist/android" | Out-Null
   foreach ($apk in $apks) {
-    Copy-Item $apk.FullName "dist\android\" -Force
-    Write-Host "OK: dist\android\$($apk.Name)"
+    Copy-Item $apk.FullName "dist/android/" -Force
+    Write-Host "OK: dist/android/$($apk.Name)"
   }
   if ($Release) {
     Write-Host "NOTE: release APKs are unsigned — sign with apksigner before store upload (docs/BUILD.md)."

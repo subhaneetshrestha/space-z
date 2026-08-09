@@ -12,6 +12,35 @@ lovec . --icons                          # regenerate launcher icons (then copy 
                                          #   LÖVE save dir into assets/icons/)
 ```
 
+## Continuous builds (GitHub Actions)
+
+`.github/workflows/build.yml` runs the scripts above on every push to `main`, every
+pull request, and every `v*` tag. It calls the same `build/*.ps1` scripts through
+`pwsh` on Ubuntu runners — there is no second copy of the build logic to keep in sync.
+
+| Job | Output |
+|---|---|
+| `test` | gate — `lua tests/run.lua`; a failure blocks every build below |
+| `package` | `space-z.love` |
+| `windows` | `SpaceZ-<version>-windows-x64.zip` (exe + DLLs + license) |
+| `android` | `SpaceZ-<version>-debug.apk` — debug-signed, installs directly |
+| `release` | tags only — a GitHub Release with all three attached |
+
+**Getting the files:** Actions tab → newest `build` run → *Artifacts* (needs a GitHub
+login, expires after 90 days). For a permanent public link, push a tag:
+
+```
+git tag v0.4.1 && git push origin v0.4.1
+```
+
+That publishes a Release whose download links need no account. Versions come from the
+tag (`v1.2.3` → `1.2.3`); untagged builds are `0.4.0-dev.<run number>`, and the Android
+`versionCode` is the run number so it always increases.
+
+The APK is **debug-signed** — right for playtesting, not accepted by Google Play. Store
+uploads still need a release keystore (see the Release APK notes below); wire that in as
+repository secrets when store submission is actually on the table.
+
 ## Instant play (no build)
 
 - **Desktop**: install LÖVE 11.x → `love .` from the repo root (or double-click

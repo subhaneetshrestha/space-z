@@ -15,8 +15,8 @@ try {
   $items = @("conf.lua", "main.lua", "src", "lib")
   if ($IncludeTests) { $items += "tests" }
 
-  $zip = "dist\space-z.zip"
-  $love = "dist\space-z.love"
+  $zip = "dist/space-z.zip"
+  $love = "dist/space-z.love"
   if (Test-Path $zip) { Remove-Item $zip -Force }
   if (Test-Path $love) { Remove-Item $love -Force }
 

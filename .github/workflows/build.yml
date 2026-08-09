@@ -1,0 +1,175 @@
+name: build
+
+# Produces downloadable builds of Space Z:
+#   - space-z.love          universal LÖVE package (desktop + Android LÖVE player)
+#   - SpaceZ-*-windows-x64  standalone Windows folder (exe + DLLs), zipped
+#   - SpaceZ-*-debug.apk    debug-signed Android APK, installs directly on a device
+#
+# Pushes to main attach these to the workflow run (Actions tab -> run -> Artifacts).
+# Pushing a v* tag additionally publishes them on a GitHub Release with permanent,
+# public download links.
+#
+# Build logic lives in build/*.ps1 (the same scripts used locally on Windows); the
+# runners execute them with pwsh, which is preinstalled on GitHub's ubuntu images.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Run test suite
+        run: lua5.1 tests/run.lua
+
+  package:
+    name: package .love
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_code: ${{ steps.version.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tag v1.2.3 -> "1.2.3". Anything else -> "0.4.0-dev.<run number>".
+      # version_code must be an ever-increasing integer for Android.
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="0.4.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "building version $version (code $GITHUB_RUN_NUMBER)"
+
+      - name: Package space-z.love
+        shell: pwsh
+        run: ./build/make-love.ps1
+
+      # a corrupt archive would otherwise surface as a broken exe/apk much later
+      - name: Verify archive
+        run: |
+          unzip -t dist/space-z.love
+          unzip -l dist/space-z.love | head -n 20
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: space-z-love
+          path: dist/space-z.love
+          if-no-files-found: error
+
+  windows:
+    name: windows exe
+    needs: [test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download LÖVE 11.5 (win64)
+        run: |
+          curl -fsSL -o love-win64.zip \
+            https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip
+          unzip -q love-win64.zip
+
+      # SpaceZ.exe = love.exe with space-z.love appended; pure byte concatenation,
+      # so it cross-builds correctly on Linux
+      - name: Fuse exe
+        shell: pwsh
+        run: ./build/build-windows.ps1 -LoveDir love-11.5-win64
+
+      - name: Zip distribution folder
+        run: |
+          cd dist/windows
+          zip -qr "../../SpaceZ-${{ needs.package.outputs.version }}-windows-x64.zip" .
+          cd ../..
+          ls -lh SpaceZ-*.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpaceZ-windows-x64
+          path: SpaceZ-*-windows-x64.zip
+          if-no-files-found: error
+
+  android:
+    name: android apk
+    needs: [test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # love-android pulls a large dependency set and the NDK on first build
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build APK
+        shell: pwsh
+        run: ./build/build-android.ps1 -VersionName '${{ needs.package.outputs.version }}' -VersionCode ${{ needs.package.outputs.version_code }}
+
+      - name: Rename APK
+        run: |
+          src=$(ls dist/android/*debug*.apk | head -n 1)
+          mv "$src" "SpaceZ-${{ needs.package.outputs.version }}-debug.apk"
+          ls -lh SpaceZ-*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpaceZ-android-apk
+          path: SpaceZ-*-debug.apk
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -lhR artifacts
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Space Z $GITHUB_REF_NAME" \
+            --generate-notes \
+            artifacts/*/*

@@ -23,6 +23,15 @@ tree, 8 unlockable ships, achievements, daily-seed runs, and the secret Black Ho
 hardcore mode. Scripted build pipeline for Windows/Android. See
 [docs/PROGRESS.md](docs/PROGRESS.md) for live status and open items.
 
+## Download a build
+
+Every push to `main` builds the Windows standalone, the Android APK, and the universal
+`.love` in GitHub Actions — grab them from the **Actions** tab → newest `build` run →
+**Artifacts**. Tagged versions are published on the
+[Releases](https://github.com/subhaneetshrestha/space-z/releases) page with permanent,
+public download links (no GitHub account needed). See
+[docs/BUILD.md](docs/BUILD.md#continuous-builds-github-actions) for details.
+
 ## Run it
 
 ```
