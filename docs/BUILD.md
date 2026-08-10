@@ -7,6 +7,7 @@ All artifacts start from **`dist/space-z.love`** (a zip of `conf.lua`, `main.lua
 pwsh build/make-love.ps1                 # -> dist/space-z.love
 pwsh build/build-windows.ps1 -LoveDir C:\path\to\love-11.5-win64   # -> dist/windows/SpaceZ.exe
 pwsh build/build-android.ps1             # -> dist/android/*.apk (needs one-time SDK setup)
+pwsh build/build-android.ps1 -Abis armeabi-v7a,arm64-v8a,x86_64   # + emulator support
 pwsh build/build-web.ps1                 # -> dist/web (static site; -Serve to test locally)
 lovec . --icons                          # regenerate launcher icons (then copy from the
                                          #   LÖVE save dir into assets/icons/)
@@ -52,6 +53,25 @@ previous release.
 
 To publish without pushing a commit (e.g. re-releasing after an infrastructure failure),
 run the workflow manually: Actions → `build` → *Run workflow* → tick **release**.
+
+### Build speed
+
+Every job except `android` finishes in seconds; the APK is the whole cost, and nearly all
+of it is CMake/ninja compiling LÖVE + megasource once per ABI. Two things keep it down:
+
+- **ABIs.** `build-android.ps1` builds `armeabi-v7a` + `arm64-v8a`, which covers every
+  real Android phone. Upstream also builds `x86_64`, which only serves emulators — that
+  is a third of the native build and a chunk of APK size for hardware nobody plays on.
+  Pass `-Abis armeabi-v7a,arm64-v8a,x86_64` when you do need to run in an emulator.
+- **Cache.** The workflow restores the whole `dist/android-build/love-android` tree — the
+  `.cxx` objects, Gradle's up-to-date snapshots, *and* the clone they were built from, so
+  ninja sees sources older than its objects instead of rebuilding everything. It is keyed
+  on love-android's upstream HEAD (the clone is unpinned) plus a hash of
+  `build-android.ps1`, and only saved after a green build, so a failed run cannot poison
+  it. Expect a full rebuild whenever upstream moves or that script changes.
+
+The APK build also pins `org.gradle.jvmargs=-Xmx4g`, because upstream sets no heap at all
+and D8's dex merge runs out of memory on the default — intermittently, which is worse.
 
 The APK is **debug-signed** — right for playtesting, not accepted by Google Play. Store
 uploads still need a release keystore (see the Release APK notes below); wire that in as

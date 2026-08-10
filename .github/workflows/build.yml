@@ -179,15 +179,37 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # love-android pulls a large dependency set and the NDK on first build
-      - name: Cache Gradle
-        uses: actions/cache@v4
+      # build-android.ps1 clones love-android unpinned, so upstream HEAD is what
+      # decides whether cached native objects are still valid.
+      - name: Resolve love-android revision
+        id: upstream
+        run: |
+          set -euo pipefail
+          sha=$(git ls-remote https://github.com/love2d/love-android HEAD | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "love-android HEAD is $sha"
+
+      # Of this job's ~22 min, the clone is 21s and the Gradle download 4s — the
+      # rest is CMake/ninja compiling LÖVE + megasource for three ABIs into
+      # app/.cxx. So caching ~/.gradle alone bought nothing; the whole love-android
+      # tree has to come back:
+      #   app/.cxx      the object files themselves
+      #   .gradle/      Gradle's up-to-date snapshots, or every task re-runs anyway
+      #   .git + cpp/   restored together so ninja sees sources OLDER than objects;
+      #                 a fresh clone would give newer mtimes and rebuild the lot
+      # Keyed on upstream HEAD because that is what the native sources come from.
+      # The game itself is not an input here — game.love is copied in later and
+      # only invalidates the asset, dex and packaging tasks.
+      - name: Restore Android build cache
+        id: cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: gradle-${{ runner.os }}-
+            dist/android-build/love-android
+          key: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-${{ hashFiles('build/build-android.ps1') }}
+          restore-keys: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-
 
       - name: Build APK
         shell: pwsh
@@ -198,6 +220,19 @@ jobs:
           src=$(ls dist/android/*debug*.apk | head -n 1)
           mv "$src" "SpaceZ-${{ needs.version.outputs.version }}-debug.apk"
           ls -lh SpaceZ-*.apk
+
+      # Saved only after a green build and only when the exact key is new, so a
+      # half-written .cxx from a failed run never becomes what everyone restores,
+      # and an unchanged upstream does not re-upload gigabytes every push.
+      - name: Save Android build cache
+        if: success() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            dist/android-build/love-android
+          key: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-${{ hashFiles('build/build-android.ps1') }}
 
       - uses: actions/upload-artifact@v4
         with:
