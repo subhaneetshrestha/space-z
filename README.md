@@ -25,11 +25,14 @@ hardcore mode. Scripted build pipeline for Windows/Android. See
 
 ## Download a build
 
-Every push to `main` builds the Windows standalone, the Android APK, and the universal
-`.love` in GitHub Actions — grab them from the **Actions** tab → newest `build` run →
-**Artifacts**. Tagged versions are published on the
-[Releases](https://github.com/subhaneetshrestha/space-z/releases) page with permanent,
-public download links (no GitHub account needed). See
+Grab the latest **Android APK**, Windows standalone, or universal `.love` from the
+[Releases](https://github.com/subhaneetshrestha/space-z/releases) page — permanent,
+public download links, no GitHub account needed.
+
+Every push to `main` runs the tests, builds all three, bumps the patch version and
+publishes a new release automatically (put `#minor` or `#major` in the commit message
+for a bigger bump). Pull-request builds land in the **Actions** tab → `build` run →
+**Artifacts** instead. See
 [docs/BUILD.md](docs/BUILD.md#continuous-builds-github-actions) for details.
 
 ## Run it

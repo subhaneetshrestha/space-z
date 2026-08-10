@@ -21,21 +21,37 @@ pull request, and every `v*` tag. It calls the same `build/*.ps1` scripts throug
 | Job | Output |
 |---|---|
 | `test` | gate — `lua tests/run.lua`; a failure blocks every build below |
+| `version` | resolves the version number and whether to publish |
 | `package` | `space-z.love` |
 | `windows` | `SpaceZ-<version>-windows-x64.zip` (exe + DLLs + license) |
 | `android` | `SpaceZ-<version>-debug.apk` — debug-signed, installs directly |
-| `release` | tags only — a GitHub Release with all three attached |
+| `release` | tags the commit and publishes a GitHub Release with all three attached |
 
-**Getting the files:** Actions tab → newest `build` run → *Artifacts* (needs a GitHub
-login, expires after 90 days). For a permanent public link, push a tag:
+**Getting the files:** every push to `main` publishes a
+[Release](https://github.com/subhaneetshrestha/space-z/releases) — permanent download
+links that need no account. Pull-request builds are not released; find those under the
+Actions tab → the `build` run → *Artifacts* (needs a GitHub login, expires after 90 days).
 
-```
-git tag v0.4.1 && git push origin v0.4.1
-```
+### Versioning
 
-That publishes a Release whose download links need no account. Versions come from the
-tag (`v1.2.3` → `1.2.3`); untagged builds are `0.4.0-dev.<run number>`, and the Android
-`versionCode` is the run number so it always increases.
+Releases are numbered automatically, starting at **v0.0.1**. Each push to `main` reads the
+highest existing `vMAJOR.MINOR.PATCH` tag and bumps it:
+
+| Trigger | Version |
+|---|---|
+| push to `main` | previous tag + 1 **patch** — `v0.0.3` → `v0.0.4` |
+| push to `main`, commit message contains `#minor` | `v0.0.3` → `v0.1.0` |
+| push to `main`, commit message contains `#major` | `v0.3.7` → `v1.0.0` |
+| `git push origin v1.2.3` | exactly `1.2.3` — the tag wins |
+| pull request | `<next>-dev.<run number>`, artifacts only, no release |
+
+The `release` job creates the tag itself as part of publishing, so there is nothing to tag
+by hand. The Android `versionCode` is the workflow run number, so it always increases even
+when the version name does not. Release notes are generated from the commits since the
+previous release.
+
+To publish without pushing a commit (e.g. re-releasing after an infrastructure failure),
+run the workflow manually: Actions → `build` → *Run workflow* → tick **release**.
 
 The APK is **debug-signed** — right for playtesting, not accepted by Google Play. Store
 uploads still need a release keystore (see the Release APK notes below); wire that in as

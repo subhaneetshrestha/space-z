@@ -5,9 +5,11 @@ name: build
 #   - SpaceZ-*-windows-x64  standalone Windows folder (exe + DLLs), zipped
 #   - SpaceZ-*-debug.apk    debug-signed Android APK, installs directly on a device
 #
-# Pushes to main attach these to the workflow run (Actions tab -> run -> Artifacts).
-# Pushing a v* tag additionally publishes them on a GitHub Release with permanent,
-# public download links.
+# Every push to main auto-bumps the patch version (first release is v0.0.1), tags the
+# commit, and publishes a GitHub Release with all three attached — permanent, public
+# download links, no GitHub account needed. Put "#minor" or "#major" in the commit
+# message for a bigger bump. Pushing a v* tag by hand releases that exact version.
+# Pull requests build the same artifacts but publish nothing.
 #
 # Build logic lives in build/*.ps1 (the same scripts used locally on Windows); the
 # runners execute them with pwsh, which is preinstalled on GitHub's ubuntu images.
@@ -18,13 +20,19 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish a release (bumps the version) instead of artifacts only'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  # never cancel a run that is going to publish — only PR rebuilds are disposable
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -41,29 +49,75 @@ jobs:
       - name: Run test suite
         run: lua5.1 tests/run.lua
 
-  package:
-    name: package .love
+  version:
+    name: resolve version
     needs: test
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      version_code: ${{ steps.version.outputs.version_code }}
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version_code: ${{ steps.resolve.outputs.version_code }}
+      release: ${{ steps.resolve.outputs.release }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need the tag history to find the previous release
 
-      # Tag v1.2.3 -> "1.2.3". Anything else -> "0.4.0-dev.<run number>".
-      # version_code must be an ever-increasing integer for Android.
+      # Tag push v1.2.3        -> 1.2.3, released under that tag.
+      # Push to main           -> previous tag + 1 patch (or #minor / #major), released.
+      # Anything else          -> <next>-dev.<run number>, artifacts only.
       - name: Resolve version
-        id: version
+        id: resolve
         run: |
+          set -euo pipefail
+
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
+            release=true
           else
-            version="0.4.0-dev.${GITHUB_RUN_NUMBER}"
+            # highest existing vMAJOR.MINOR.PATCH tag; empty on a fresh repo
+            latest=$(git tag -l --sort=-v:refname \
+                     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+
+            if [[ -z "$latest" ]]; then
+              version="0.0.1"
+              echo "no release tags yet -> starting at $version"
+            else
+              IFS=. read -r major minor patch <<< "${latest#v}"
+              msg=$(git log -1 --pretty=%B)
+              case "$msg" in
+                *'#major'*) major=$((major + 1)); minor=0; patch=0 ;;
+                *'#minor'*) minor=$((minor + 1)); patch=0 ;;
+                *)          patch=$((patch + 1)) ;;
+              esac
+              version="$major.$minor.$patch"
+              echo "previous release $latest -> $version"
+            fi
+
+            if [[ "$GITHUB_REF" == refs/heads/main && "$GITHUB_EVENT_NAME" == push ]] \
+               || [[ "${{ inputs.release }}" == "true" ]]; then
+              release=true
+            else
+              release=false
+              version="$version-dev.$GITHUB_RUN_NUMBER"
+            fi
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "version_code=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "building version $version (code $GITHUB_RUN_NUMBER)"
+
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            # Android requires an ever-increasing integer; run_number never repeats
+            echo "version_code=$GITHUB_RUN_NUMBER"
+            echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
+          echo "building $version (code $GITHUB_RUN_NUMBER, release=$release)"
+
+  package:
+    name: package .love
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Package space-z.love
         shell: pwsh
@@ -83,7 +137,7 @@ jobs:
 
   windows:
     name: windows exe
-    needs: [test, package]
+    needs: [version, package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,7 +157,7 @@ jobs:
       - name: Zip distribution folder
         run: |
           cd dist/windows
-          zip -qr "../../SpaceZ-${{ needs.package.outputs.version }}-windows-x64.zip" .
+          zip -qr "../../SpaceZ-${{ needs.version.outputs.version }}-windows-x64.zip" .
           cd ../..
           ls -lh SpaceZ-*.zip
 
@@ -115,7 +169,7 @@ jobs:
 
   android:
     name: android apk
-    needs: [test, package]
+    needs: [version, package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -137,12 +191,12 @@ jobs:
 
       - name: Build APK
         shell: pwsh
-        run: ./build/build-android.ps1 -VersionName '${{ needs.package.outputs.version }}' -VersionCode ${{ needs.package.outputs.version_code }}
+        run: ./build/build-android.ps1 -VersionName '${{ needs.version.outputs.version }}' -VersionCode ${{ needs.version.outputs.version_code }}
 
       - name: Rename APK
         run: |
           src=$(ls dist/android/*debug*.apk | head -n 1)
-          mv "$src" "SpaceZ-${{ needs.package.outputs.version }}-debug.apk"
+          mv "$src" "SpaceZ-${{ needs.version.outputs.version }}-debug.apk"
           ls -lh SpaceZ-*.apk
 
       - uses: actions/upload-artifact@v4
@@ -153,8 +207,8 @@ jobs:
 
   release:
     name: publish release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package, windows, android]
+    if: needs.version.outputs.release == 'true'
+    needs: [version, package, windows, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -163,13 +217,26 @@ jobs:
         with:
           path: artifacts
 
+      # gh creates the tag at --target when it does not exist yet, so pushes to
+      # main need no separate tagging step. Re-runs re-upload into the same release.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
+          set -euo pipefail
           ls -lhR artifacts
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Space Z $GITHUB_REF_NAME" \
-            --generate-notes \
-            artifacts/*/*
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists -> replacing assets"
+            gh release upload "$TAG" artifacts/*/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Space Z $TAG" \
+              --generate-notes \
+              artifacts/*/*
+          fi
+
+          echo "published: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
