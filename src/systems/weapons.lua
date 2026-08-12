@@ -160,7 +160,11 @@ local function fireArc(world, w, def, lv)
   return true
 end
 
--- continuous cutting beam: damage ticks + a per-frame visual segment
+-- Continuous cutting beam: damage ticks + ONE persistent visual segment.
+-- The segment is refreshed in place rather than re-pushed every step, so the
+-- additive draw stacks a single copy at any simulation rate. (Pushing per step
+-- kept ceil(life/step) copies alive, i.e. 3 at 60 Hz but 6 at 120 Hz — the halo
+-- was twice as bright on a high-refresh phone.)
 local function updateBeam(world, w, def, lv, dt)
   local player = world.player
   if player.dead or world.phase == "over" then return end
@@ -169,11 +173,18 @@ local function updateBeam(world, w, def, lv, dt)
     w.tickT = w.tickT + lv.tick / world.stats.fireRateMult
     hitColumn(world, player.x, player.y, lv.width * 0.5, lv.damage)
   end
-  local beams = world.beams
-  beams[#beams + 1] = {
-    x = player.x, y2 = player.y - 14, width = lv.width,
-    t = 0, life = 0.05, kind = "laser",
-  }
+  local vis = w.beamVis
+  if not vis or vis.t > vis.life then -- never created, or already aged out
+    vis = { life = 0.05, kind = "laser" }
+    w.beamVis = vis
+    local beams = world.beams
+    beams[#beams + 1] = vis
+  end
+  -- Pre-decremented by one step so game.lua's ageList (which runs later in the
+  -- same step) lands t back on 0: full strength while firing, fading over `life`
+  -- once firing stops. Rate-independent by construction.
+  vis.t = -dt
+  vis.x, vis.y2, vis.width = player.x, player.y - 14, lv.width
 end
 
 -- burning halo: periodic damage to everything inside the radius

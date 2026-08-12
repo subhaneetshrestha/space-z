@@ -156,7 +156,9 @@ behaviors.leviathan = {
       end
 
     elseif e.state == "telegraph" then
-      e.x = e.x + sin(e.t * 40) * 2.2 -- shudder before the drill drops
+      -- shudder before the drill drops (132 = the old per-step 2.2 px at 60 Hz,
+      -- dt-scaled so the amplitude doesn't double on a high-refresh display)
+      e.x = e.x + sin(e.t * 40) * 132 * dt
       if e.stateT <= 0 then
         e.state = "dive"
       end

@@ -14,7 +14,8 @@ function T.defaults_shape(t)
   t.eq(d.stardust, 0)
   t.eq(d.totalRuns, 0)
   t.eq(d.unlocked.blackhole, false)
-  t.eq(d.settings.steerMode, "floating")
+  t.eq(d.settings.quality, "high")
+  t.eq(d.settings.steerMode, nil, "steerMode retired: steering is always 1:1 drag")
 end
 
 function T.data_memoizes(t)

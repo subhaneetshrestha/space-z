@@ -4,6 +4,7 @@ local StateM = require("src.core.state")
 local Viewport = require("src.core.viewport")
 
 local STEP = 1 / 60
+local MIN_STEP = 1 / 240 -- sub-steps below this carry to the next frame instead
 local MAX_STEPS = 5      -- normal mode: drop time beyond this per frame
 local SMOKE_STEPS = 8    -- smoke mode: fixed 8x speed
 local SMOKE_LIMIT = 320  -- sim-seconds before the smoke run gives up
@@ -298,17 +299,23 @@ function love.update(dt)
     return
   end
 
-  if dt > 0.1 then dt = 0.1 end
+  -- Semi-fixed timestep: always advance by the real elapsed time, in chunks of
+  -- at most STEP. The old pure-fixed loop ran ZERO steps on most frames of a
+  -- 90/120 Hz display (and beat 0/2 under dt jitter at 60 Hz), which made the
+  -- ship stair-step under a smoothly moving finger. Events are pumped before
+  -- love.update, so one sub-step per frame means this frame's touchmoved is
+  -- consumed by this frame's simulation.
   accumulator = accumulator + dt
   local steps = 0
-  while accumulator >= STEP and steps < MAX_STEPS do
-    StateM.update(STEP)
-    accumulator = accumulator - STEP
+  while accumulator >= MIN_STEP and steps < MAX_STEPS do
+    local s = accumulator < STEP and accumulator or STEP
+    StateM.update(s)
+    accumulator = accumulator - s
     steps = steps + 1
   end
-  if steps == MAX_STEPS then
-    accumulator = 0 -- can't keep up: drop the backlog instead of spiraling
-  end
+  -- Hitch or sustained overload: drop the backlog instead of spiraling. Change
+  -- below MIN_STEP is kept, so a very fast display never loses time.
+  if accumulator >= MIN_STEP then accumulator = 0 end
 end
 
 function love.draw()

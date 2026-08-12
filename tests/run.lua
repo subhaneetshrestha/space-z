@@ -41,6 +41,7 @@ local FILES = {
   "tests.test_evolutions",
   "tests.test_effects",
   "tests.test_meta",
+  "tests.test_input",
 }
 
 function M.runAll()

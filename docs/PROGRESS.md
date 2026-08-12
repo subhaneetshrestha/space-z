@@ -40,8 +40,8 @@ ARCHITECTURE.md in the same change.**
 ## Milestone checklist (from docs/PLAN.md)
 
 - [x] **M0 — Feel:** LÖVE skeleton, stack state machine, 480×854 portrait viewport (letterboxed),
-      3-layer parallax starfield + procedural Earth backdrop, steering (touch floating w/
-      anti-drift + absolute + mouse-drag + WASD), auto-fire, 4 enemy types, pooling everywhere,
+      3-layer parallax starfield + procedural Earth backdrop, steering (1:1 relative drag for
+      touch + mouse, plus WASD), auto-fire, 4 enemy types, pooling everywhere,
       uniform-grid collision, HP/i-frames/death, minimal HUD (XP bar, HP ring, boss bar)
 - [x] **M1 — Roguelite loop:** XP gems w/ merge+magnet, level curve, card-draft UI (3 cards,
       tap/keys, level pips, fallbacks), 5 weapons (blaster/missiles/flak/ion arc/drones) ×
@@ -161,7 +161,12 @@ ARCHITECTURE.md in the same change.**
   of unearned immunity — cosmetic-level impact).
 - A deeper multi-agent adversarial review pass is worth running when subagent capacity allows.
 - Android APK build not yet executed (pipeline scripted; needs one-time SDK setup — BUILD.md).
-- Fancy settings screen deferred (menu [M]/[S]/[Q] toggles cover steering/sound/quality).
+- Fancy settings screen deferred (menu [S]/[Q] toggles cover sound/quality; steering has no
+  setting any more — 1:1 relative drag is the only scheme).
+- Both remaining menu toggles are keyboard-only, so they are unreachable on a phone.
+- No on-screen pause control; pause is `escape` only (Android maps the back button to it).
+- Seeded runs are no longer bit-reproducible *across devices* now that the sim steps by real
+  elapsed time (`--smoke` keeps its own fixed 1/60 loop and stays deterministic).
 
 ## Decisions made during implementation (deltas vs PLAN.md)
 
@@ -169,6 +174,13 @@ ARCHITECTURE.md in the same change.**
   warhead_yield, hull_plating, nanorepair, thrusters, reactor_core, tractor_beam, ammo_feed`.
   Evolutions deferred to M2 (schema fields reserved).
 - Smoke screenshots use `love.graphics.captureScreenshot` (simpler than canvas re-render).
+- Steering rewritten to 1:1 relative drag (positional), replacing the floating/absolute rate
+  controls; `settings.steerMode` and the `[M]` toggle are gone and stripped from old saves.
+  Fixed alongside: pushed overlays used to strand the steering touch id (`game:resume()` now
+  calls `input:reset()`), and `love.update` steps by real elapsed time so the ship no longer
+  stair-steps on 90/120 Hz displays. That last change means anything added *per step* rather
+  than scaled by `dt` is now refresh-rate dependent — the two that existed (laser beam visual
+  in `weapons.lua`, drill-boss telegraph shudder in `boss.lua`) were fixed.
 - Tests are pure-Lua headless (gameplay systems never touch `love.*` at module load);
   render/ui modules are exempt and verified via the smoke run instead.
 - Stardust formula (lives in `src/meta/progress.lua` ONLY):

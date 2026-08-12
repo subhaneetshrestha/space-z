@@ -246,7 +246,7 @@ function M:enter(params)
 
   local settings = Save.data().settings
   self.world = world
-  self.input = Input.new(settings)
+  self.input = Input.new()
   self.starfield = Starfield.new(seed, settings.quality)
   Particles.setCap(settings.quality == "low" and 220 or 600)
   self.batch = Sprites.batch()
@@ -526,9 +526,13 @@ local function drawEntities(self, world)
       lg.setColor(1, 1, 1, 0.9 * fade)
       lg.rectangle("fill", b.x - w * 0.18, 0, w * 0.36, b.y2)
     else
-      lg.setColor(0.3, 0.9, 1, 0.22 * fade)
+      -- 2x the old per-segment alpha: the laser used to push a fresh segment every
+      -- step and additively stack ceil(life/step) fading copies (~2.0x at 60 Hz).
+      -- weapons.lua now keeps exactly one segment so the halo is the same on any
+      -- refresh rate; these constants carry the original brightness over.
+      lg.setColor(0.3, 0.9, 1, 0.44 * fade)
       lg.rectangle("fill", b.x - w * 0.5, 0, w, b.y2)
-      lg.setColor(0.9, 1, 1, 0.7 * fade)
+      lg.setColor(0.9, 1, 1, 1.0 * fade)
       lg.rectangle("fill", b.x - w * 0.15, 0, w * 0.3, b.y2)
     end
   end
@@ -614,6 +618,16 @@ function M:draw()
     HUD.drawBanner(world, world.zone.name, math.min(1, 3 - world.zoneTime),
       world.zone.subtitle)
   end
+end
+
+-- Overlays (levelup/pause/gameover) are pushed on top of this state, and
+-- core/state.lua forwards input to the top state only — so while one is up our
+-- Input never sees touchreleased and its steering pointer stays latched. Drop
+-- every in-flight pointer on the way back in: the tracked positions are a whole
+-- card-draft stale. Input re-adopts fingers that are still genuinely down on its
+-- next step, and because grabs are delta-based that costs the hull zero motion.
+function M:resume()
+  self.input:reset()
 end
 
 function M:keypressed(key)

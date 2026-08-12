@@ -47,7 +47,7 @@ Three findings shape the design: (1) **"Simple but deep" is a deliberate formula
 ## Controls & anti-clutter UI (a primary requirement)
 
 **Steering (one thumb, no fire button — validated because attacks auto-fire):** [equalentry.com; naavik.co]
-- **Mobile:** touch-drag via a **dynamic/floating control** (engages where you first touch), engineered around the documented **"drift-and-die" pitfall** (finger creeps to the edge, re-centering stalls the ship). Mitigations: generous control-to-ship scaling, **re-anchor on re-touch without halting**, and an optional **absolute-positional follow** mode (ship maps to finger with an upward offset, eliminating drift). Both in settings. [equalentry.com; inairspace.com]
+- **Mobile:** **1:1 relative drag** — touching down grabs, and the ship then moves by exactly the delta your finger moves (scaled by `stats.speed / 300`, so upgrades cover more ground per finger-pixel). Engages anywhere on screen, so the thumb never covers the ship. This is *positional*, not rate control: the documented **"drift-and-die" pitfall** (finger creeps to the edge, re-centering stalls the ship) cannot occur because there is no anchor to drift from — lifting and re-placing the thumb re-grabs for free, and over-dragging into a wall banks no slack to retrace. Shipped as the single steering scheme; the old floating/absolute modes and their `settings.steerMode` toggle were removed. [equalentry.com; inairspace.com]
 - **PC:** mouse-follow or WASD/arrows; auto-fire; one key (Space) for a ship's active ability.
 - **At most one** on-screen button, ever — only for ships with a manual special.
 
@@ -94,7 +94,7 @@ space-z/
                  HUD, upgrade-card UI
     meta/     -- save/load (love.filesystem + JSON), currencies, unlocks,
                  achievements, difficulty modes, settings
-    ui/       -- touch (floating/absolute steering), buttons, menus, scaling
+    ui/       -- touch (1:1 relative drag steering), buttons, menus, scaling
   assets/     -- generated atlases (or generators), fonts, sfx/music (CC0)
   lib/        -- small permissively-licensed helpers (hump, json.lua, flux)
   tests/      -- logic tests (damage/crit math, upgrades, save/load, spawner)
@@ -131,7 +131,7 @@ Currencies: **Stardust** (soft, every run) + **Alien Cores** (bosses).
 
 ## Milestones
 
-- **M0 — Feel:** LÖVE skeleton, state machine, portrait field, parallax starfield, floating/absolute steering + mouse, auto-fire, one enemy, pooling, spatial-hash collision, HP/death, minimal HUD. *Goal: the core feels fun.*
+- **M0 — Feel:** LÖVE skeleton, state machine, portrait field, parallax starfield, 1:1 relative-drag steering + mouse + WASD, auto-fire, one enemy, pooling, spatial-hash collision, HP/death, minimal HUD. *Goal: the core feels fun.*
 - **M1 — Roguelite loop:** XP/leveling, card-draft UI, ~4 weapons + starter passives, enemy variety, Zone 1 + first boss, run-end + Stardust. *Goal: one satisfying full run.*
 - **M2 — Content & depth:** all 7 zones + bosses, the **curated launch arsenal** + evolutions/synergies, crit/missile/graviton systems, elite modifiers, 6+6 slot caps.
 - **M3 — Meta & modes:** save system, Stardust economy, multi-track meta (tree + ship/weapon unlocks + achievements), ~8–11 ships, **Standard + Black Hole modes** with the secret flawless-clear unlock, settings, audio.
