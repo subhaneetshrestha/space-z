@@ -41,8 +41,14 @@ main.lua          -- love callbacks, fixed timestep, arg parsing (--test / --smo
      If `args` contains `"--smoke"` → smoke mode (below). Otherwise: build sprite atlas
      (`Sprites.build()`), load save (`Save.load()`), register all five states with the state
      machine, `StateM.switch("menu")`.
-  2. **Fixed timestep:** accumulator in `love.update(dt)`; clamp raw `dt` to `0.1`; step
-     `STEP = 1/60`; call `StateM.update(STEP)` per step (max 5 steps/frame, drop the rest).
+  2. **Semi-fixed timestep:** accumulator in `love.update(dt)`; each iteration steps by
+     `min(accumulator, STEP)` with `STEP = 1/60`, so every frame simulates the real elapsed
+     time. (A pure-fixed loop ran zero steps on most frames of a 90/120 Hz display and made
+     touch steering stair-step.) Sub-steps below `MIN_STEP = 1/240` carry to the next frame;
+     max 5 steps/frame, then drop the backlog. Consequence: step size varies with refresh
+     rate, so a seeded run is no longer bit-reproducible across devices — `--smoke` keeps its
+     own fixed `StateM.update(STEP)` loop and stays deterministic. Systems must scale
+     everything by `dt`; anything added per *step* changes with refresh rate.
   3. `love.draw()`: `Viewport.apply()` → `StateM.draw()` → `Viewport.unapply()`.
   4. Forward `love.resize(w,h)` → `Viewport.resize`; forward `keypressed`, `mousepressed`,
      `mousemoved`, `mousereleased`, `touchpressed`, `touchmoved`, `touchreleased` to `StateM`
@@ -238,7 +244,8 @@ Boss entities are skipped here (handled by boss.lua). Drones handled by weapons.
 
 **Zone environment modifiers** (from `world.zone.modifiers`, applied to the PLAYER here):
 `gravity` (px/s constant downward drift — Jupiter), `wind = {amp, period}` (sinusoidal
-lateral push — Mars), `playerSpeedMult` (steering feel multiplier — Jupiter). The storm
+lateral push — Mars), `playerSpeedMult` (steering feel multiplier — Jupiter; **keyboard
+only**, `input.lua` divides it out so drags stay 1:1). The storm
 boss's gravity pulse uses `world.pulseT > 0` → +150 px/s downward (boss.lua sets it,
 game.lua decays it).
 
@@ -416,18 +423,42 @@ if present, else desc.
 
 ### input.lua — steering (instance)
 ```lua
-local input = Input.new(settings)   -- settings: { steerMode = "floating"|"absolute" }
+local input = Input.new()           -- no args; there is one steering scheme
 input:update(world, dt)             -- sets world.player.vx/vy (movement.lua integrates)
-input:keypressed(key) / touchpressed(id,x,y) / touchmoved(id,x,y) / touchreleased(id,x,y)
-input:mousepressed(x,y,b) / mousemoved(x,y,dx,dy) / mousereleased(x,y,b)
+input:reset()                       -- drop every in-flight pointer (see below)
+input:touchpressed(id,x,y) / touchmoved(id,x,y) / touchreleased(id)
+input:mousepressed(x,y,b) / mousemoved(x,y) / mousereleased(x,y,b)
 ```
-Priority per frame: keyboard (WASD/arrows, normalized, `* stats.speed`) → touch → mouse.
-- **Touch floating** (default): anchor at touch start; ship velocity = (finger − anchor) × 3.0
-  clamped to `stats.speed * 1.15`; **re-anchor on every new touch without zeroing velocity**;
-  slowly re-center anchor toward finger when finger stops (anti-drift, per plan).
-- **Touch absolute**: ship eases toward (finger x, finger y − 90) at up to `stats.speed * 1.6`.
-- **Mouse** (desktop): held left button drags like absolute mode (button not held → no motion).
-- No input → decelerate to rest fast (`Util.approach` vx,vy → 0, 2400 px/s²).
+Priority per step: keyboard (WASD/arrows, normalized, `* stats.speed`) → drag → coast.
+
+**1:1 relative drag** (touch and mouse share one path). Touching down grabs; the ship then
+moves by the same delta the pointer moves, scaled by `sens = stats.speed / 300` (the
+baseline hull is exactly 1:1; upgrades cover more ground per finger-pixel). Dragging starts
+anywhere on screen, and lifting and re-placing the pointer re-grabs without moving the ship.
+
+- **Contract:** to land the hull `s` px from where `movement.lua` left it, emit
+  `vx = s / (speedMult * dt)`. This is a per-step *pseudo* velocity — it spikes to thousands
+  of px/s on a swipe and is recomputed from scratch each step. `movement.lua:199-200` is the
+  only reader of `player.vx/vy`.
+- **Incremental, never absolute.** The grab is re-baselined from the live pointer and the
+  live hull position every step, so zone gravity/wind are never undone, wall over-drag banks
+  no slack, and every hand-off costs zero motion. Never target `shipAtGrab + (finger − fingerAtGrab)`.
+- Order inside the solver: clamp the target to the playfield (same bounds as `movement.lua`)
+  **first**, then cap to `MAX_DRAG_RATE = 3000` px/s, then divide out `playerSpeedMult` so a
+  drag is 1:1 in every zone. Heavy zones still bite via gravity/wind/pulse, which
+  `movement.lua` adds afterwards — `playerSpeedMult` now only affects the keyboard branch.
+- **Multi-touch:** oldest live touch steers, so a stray contact can't steal the hull; on
+  release the next touch is promoted with a fresh grab. `love.touch.getTouches()` is polled
+  each step for liveness and position, but only for ids it has confirmed at least once, so
+  the module degrades to pure event tracking when `love.touch` is unavailable (headless).
+- **`input:reset()`** is called from `game:resume()`. Overlays sit on top of the game state
+  and `state.lua` routes input to the top state only, so `touchreleased` never arrives while
+  one is up. Without the reset, the whole accumulated delta lands in one step.
+- Releasing a drag stops the hull dead (positional control carries no momentum). Only the
+  keyboard branch coasts, via private `decelVx/decelVy` (`Util.approach` → 0, 2400 px/s²) —
+  it must **not** read back `player.vx`, which is a pseudo-velocity.
+- Headless-safe: `love`, `love.keyboard`, `love.touch` and `love.mouse` are all nil-guarded,
+  so `tests/test_input.lua` drives it against the real `Movement.update`.
 
 ### autopilot.lua — smoke-test bot
 `Autopilot.update(world, dt)` — sets player.vx/vy: weave on a sine, bias toward nearest xp pickup,
@@ -438,7 +469,7 @@ Used when `world.autopilot`; also auto-picks card 1 is handled by levelup state 
 
 ### menu.lua — `"menu"`
 Neon title, starfield behind, "TAP / CLICK / SPACE TO LAUNCH", total Stardust from save,
-steering-mode toggle hint (`M` key / tap gear: flips setting, persists via Save). Any
+sound (`S`) and FX-quality (`Q`) toggle hints (flip the setting, persist via Save). Any
 launch input → `StateM.switch("game", { mode = "standard" })`.
 
 ### game.lua — `"game"` (the hub; owns world creation & orchestration)
@@ -619,7 +650,8 @@ Save.data() -> data      -- cached table (load() memoizes)
 Save.write()             -- serialize cached data
 Save.reset()
 -- defaults: { version=1, stardust=0, totalRuns=0, bestDistance=0, bestLevel=0,
---   unlocked={ blackhole=false }, settings={ steerMode="floating", sound=true } }
+--   unlocked={ blackhole=false }, settings={ sound=true, quality="high" } }
+-- load() strips the retired settings.steerMode key from older saves.
 ```
 Headless-safe: if `love.filesystem` is nil (tests), keep data in memory only.
 

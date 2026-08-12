@@ -10,7 +10,7 @@ A **2D space-themed roguelite** for phones and PC — a vertical-ascent space sh
 | **Platforms** | Android, iOS, PC (Windows/macOS/Linux) |
 | **Engine** | [LÖVE (Love2D)](https://love2d.org) 11.x — Lua, open source (zlib) |
 | **Art** | Neon-vector, generated procedurally in code (no external art assets) |
-| **Controls** | One thumb (touch-drag steer) / mouse or WASD on PC; weapons auto-fire |
+| **Controls** | One thumb — 1:1 relative drag from anywhere on screen / mouse or WASD on PC; weapons auto-fire |
 | **Modes** | Standard (HP + regen) · **Black Hole** — secret hardcore mode (one-hit death, tankier enemies), unlocked by a flawless no-damage run |
 
 ## Status
@@ -48,9 +48,10 @@ Prebuilt artifacts land in `dist/` (`space-z.love` runs anywhere LÖVE does — 
 the Android LÖVE player app; `windows/SpaceZ.exe` is standalone). Build scripts and the
 Android/iOS shipping guide live in [docs/BUILD.md](docs/BUILD.md).
 
-Controls: WASD/arrows, mouse-drag, or one-thumb touch (floating or absolute mode — toggle
-with `M` on the menu; `S` sound, `Q` quality). Weapons auto-fire; Esc pauses; pick cards
-with tap/click or `1/2/3`.
+Controls: drag anywhere to steer — the ship moves exactly as far as your finger (or the
+mouse) does, so you can drag from any corner of the screen and lift and re-place your
+thumb without the ship jumping. WASD/arrows also work. `S` toggles sound, `Q` toggles FX
+quality. Weapons auto-fire; Esc pauses; pick cards with tap/click or `1/2/3`.
 
 ## Documentation
 

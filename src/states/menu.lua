@@ -143,9 +143,8 @@ function M:draw()
   -- footer toggles
   lg.setFont(Util.font(11))
   lg.setColor(0.4, 0.55, 0.65, 0.8)
-  lg.printf("WASD / ARROWS / MOUSE-DRAG / ONE THUMB", 0, VH - 58, VW, "center")
-  lg.printf("[M] STEERING: " .. string.upper(data.settings.steerMode)
-    .. "    [S] SOUND: " .. (data.settings.sound ~= false and "ON" or "OFF")
+  lg.printf("DRAG ANYWHERE TO STEER  /  WASD / ARROWS", 0, VH - 58, VW, "center")
+  lg.printf("[S] SOUND: " .. (data.settings.sound ~= false and "ON" or "OFF")
     .. "    [Q] FX: " .. string.upper(data.settings.quality or "high"),
     0, VH - 40, VW, "center")
   if data.daily and data.daily.date == os.date("%Y%m%d") then
@@ -165,11 +164,6 @@ function M:keypressed(key)
     Audio.play("tick")
   elseif key == "down" then
     self.selected = self.selected < n and self.selected + 1 or 1
-    Audio.play("tick")
-  elseif key == "m" then
-    local settings = Save.data().settings
-    settings.steerMode = settings.steerMode == "floating" and "absolute" or "floating"
-    Save.write()
     Audio.play("tick")
   elseif key == "s" then
     local settings = Save.data().settings

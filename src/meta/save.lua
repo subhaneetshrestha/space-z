@@ -18,7 +18,7 @@ local function defaults()
     bestDistance = 0,
     bestLevel = 0,
     unlocked = { blackhole = false, ships = { pathfinder = true } },
-    settings = { steerMode = "floating", sound = true, quality = "high",
+    settings = { sound = true, quality = "high",
                  ship = "pathfinder", mode = "standard" },
     tech = {},
     achievements = {},
@@ -54,6 +54,9 @@ function M.load()
     end
   end
   data.version = CURRENT_VERSION -- forced migration to the current schema
+  -- retired setting: steering is now always 1:1 relative drag. merge() preserves
+  -- unknown keys, so without this the orphan lives in every old save forever.
+  data.settings.steerMode = nil
   cache = data
   return cache
 end
