@@ -5,6 +5,7 @@
 -- yet, so every snapshot still resumes in the "waves" phase.
 local RNG = require("src.core.rng")
 local Viewport = require("src.core.viewport")
+local Entities = require("src.meta.runsave_entities")
 local Ships = require("src.content.ships")
 local Weapons = require("src.content.weapons")
 local Upgrades = require("src.content.upgrades")
@@ -95,6 +96,8 @@ function M.snapshot(world, opts)
     passives = ids(world.passives),
     rng = {},
     spawnerTimers = timerPairs(world.spawnerState),
+    -- the boss and warp phases still rewind to an empty field (changed in A5)
+    enemies = world.phase == "waves" and Entities.captureEnemies(world.enemies or {}) or {},
   }
   for i = 1, #STREAMS do
     run.rng[STREAMS[i]] = world.rng[STREAMS[i]]:getState()
@@ -238,7 +241,8 @@ function M.validate(run)
     return false
   end
   if not validOwned(run.passives, Upgrades, MAX_PASSIVES, "passive") then return false end
-  if exact and not (validPlayer(run.player) and validRunning(run.timers)) then
+  if exact and not (validPlayer(run.player) and validRunning(run.timers)
+      and Entities.validEnemies(run.enemies)) then
     return false
   end
 
@@ -283,6 +287,8 @@ function M.apply(world, run)
   world.phase = "waves"
   world.boss = nil
   world.warpT = 0
+  local exact = run.version == RUN_VERSION
+  Entities.restoreEnemies(world, exact and run.enemies or {}) -- a version 1 save: empty field
 
   world.level = run.level
   world.xp = run.xp
@@ -294,7 +300,6 @@ function M.apply(world, run)
   world.stardustEarned = run.stardustEarned
 
   -- the tables are filled in place: other code may already hold them
-  local exact = run.version == RUN_VERSION
   fill(world.weapons, run.weapons, Weapons)
   for i = 1, #world.weapons do
     local w, saved = world.weapons[i], run.weapons[i]

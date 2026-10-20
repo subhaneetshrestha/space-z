@@ -640,13 +640,14 @@ function T.apply_resumed_spawns_match_a_run_that_never_paused(t)
 
   local b = freshWorld(31337)
   RunSave.apply(b, run)
+  t.eq(#b.enemies, before, "the enemies on screen at the save come back (they used to be dropped)")
   simulate(a, 12) -- the original keeps playing...
   simulate(b, 12) -- ...the resumed copy plays the same 12 s from the save
 
-  t.eq(#b.enemies, #a.enemies - before, "same number of new spawns")
-  t.ok(#b.enemies > 0, "fixture must actually spawn something")
-  for i = 1, #b.enemies do
-    local ea, eb = a.enemies[before + i], b.enemies[i]
+  t.eq(#b.enemies, #a.enemies, "same number of enemies in the end")
+  t.ok(#b.enemies > before, "fixture must actually spawn something")
+  for i = before + 1, #b.enemies do
+    local ea, eb = a.enemies[i], b.enemies[i]
     t.eq(eb.x, ea.x, "x of spawn " .. i)
     t.eq(eb.y, ea.y, "y of spawn " .. i)
     t.eq(eb.def.id, ea.def.id, "type of spawn " .. i)

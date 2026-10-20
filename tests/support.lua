@@ -92,8 +92,12 @@ function M.worldView(w)
 end
 
 -- Path of the first difference between two worlds' simulation state, or nil.
-function M.worldDiff(a, b)
-  return M.firstDiff(M.worldView(a), M.worldView(b), "world")
+-- skip: set of view keys to leave out, for state a task has not started saving yet
+-- (e.g. { ebullets = true }); each task removes what it now covers.
+function M.worldDiff(a, b, skip)
+  local va, vb = M.worldView(a), M.worldView(b)
+  for k in pairs(skip or {}) do va[k], vb[k] = nil, nil end
+  return M.firstDiff(va, vb, "world")
 end
 
 function M.noop() end
@@ -185,6 +189,20 @@ function M.validRun(over)
     rng = { spawn = 1234, drops = 2345, cards = 3456, misc = 4567 },
     spawnerTimers = {},
   }
+  for k, v in pairs(over or {}) do run[k] = v end
+  return run
+end
+
+-- The same run as a version 2 (exact snapshot) save: player, running timers, weapon
+-- cooldowns, and an empty field.
+function M.validRun2(over)
+  local run = M.validRun({
+    version = 2,
+    player = { x = 240, y = 518, vx = 0, vy = 0, invulnT = 0 },
+    timers = { freezeT = 0, shieldT = 0, pulseT = 0, hpRingT = 0 },
+    weapons = { { id = "blaster", level = 2, cooldown = 0.15 } },
+    enemies = {},
+  })
   for k, v in pairs(over or {}) do run[k] = v end
   return run
 end

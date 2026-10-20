@@ -55,7 +55,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/meta/runsave.lua`, `tests/test_runsave.lua`, `tests/support.lua`
   - Scope: S
 
-- [ ] **A2: Enemies and the reference table**
+- [x] **A2: Enemies and the reference table** (404/0 headless and on LÖVE 12; negative controls: dropping a saved field and restoring in reverse order both fail the suite. Additions beyond the plan: `lib/json.lua` now writes numbers that 14 digits would change with 17, because a shooter's fire timer sits exactly on zero and 14-digit rounding moved it one frame; per-movement scratch consistency is validated, since a half-initialised shooter would index nil on the first frame. The "reference table" itself lands with A3/A4, which are the first entities that point at others.)
   - Description: Capture and restore live enemies in list order, for all movement types (`drift, sine, chaser, shooter, lunge, ballistic`), including elites and chilled (`slowT`) ones. Introduce the index table used by later tasks. Add the completeness test (plan decision 2): long deterministic sims over every enemy type; any live key that is neither whitelisted nor on the `DERIVED` list fails the test. New module `src/meta/runsave_entities.lua` holds the field lists and (de)serializers.
   - Acceptance:
     - [ ] Criterion 1 for enemies; criterion 2 (behavioural identity) holds for 600 frames per movement type with the same seed.
