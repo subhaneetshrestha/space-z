@@ -85,7 +85,7 @@ Plan: `tasks/plan.md`. Spec: `SPEC.md`. Tests: `lua tests/run.lua`. Work on a br
 
 ## Phase 3: Ship
 
-- [ ] **Task 6: Verify end to end and open the PR**
+- [x] **Task 6: Verify end to end and open the PR**
   - Description: Re-run the desktop measurements from the spec against the fixed code, run the smoke test, and open a PR with before/after numbers. Do not merge.
   - Acceptance:
     - [ ] Spec criteria 1-5, 7 and 8 checked with measured values (criterion 6, the on-phone stutter target, is Stage 2 and stays open).
