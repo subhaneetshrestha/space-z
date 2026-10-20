@@ -24,6 +24,7 @@ local function registerStates()
   StateM.register("menu", require("src.states.menu"))
   StateM.register("game", require("src.states.game"))
   StateM.register("pause", require("src.states.pause"))
+  StateM.register("countdown", require("src.states.countdown"))
   StateM.register("levelup", require("src.states.levelup"))
   StateM.register("gameover", require("src.states.gameover"))
   StateM.register("hangar", require("src.states.hangar"))
@@ -324,7 +325,21 @@ function love.draw()
   Viewport.unapply()
 end
 
+-- Persist the in-progress run (a no-op unless a saveable run is active). Never
+-- lets a failed save keep the app from backgrounding or closing.
+local function saveRun()
+  local ok, err = pcall(function() require("src.states.game").saveRun() end)
+  if not ok then print("[save] run save failed: " .. tostring(err)) end
+end
+
+-- Android backgrounding (and desktop alt-tab) arrive here; the process may be
+-- killed without love.quit ever running, so this is the save that matters there.
+function love.focus(focused)
+  if not focused then saveRun() end
+end
+
 function love.quit()
+  saveRun()
   if smoke and not smoke.finalized then
     smokeFinalize("OK (run ended)")
   end

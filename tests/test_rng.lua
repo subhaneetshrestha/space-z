@@ -88,4 +88,32 @@ function T.shuffle_deterministic(t)
   for i = 1, 5 do t.eq(la[i], lb[i], "same shuffle at " .. i) end
 end
 
+function T.state_roundtrip_resumes_stream(t)
+  local a = RNG.new(31)
+  for _ = 1, 17 do a:random() end -- mid-stream, not a fresh seed
+  local saved = a:getState()
+  local b = RNG.new(999)          -- unrelated stream, overwritten by setState
+  t.eq(b:setState(saved), true, "valid state accepted")
+  for i = 1, 100 do
+    t.eq(b:random(), a:random(), "draw " .. i)
+  end
+end
+
+function T.state_is_a_plain_number(t)
+  local s = RNG.new(5):getState()
+  t.eq(type(s), "number", "state must be JSON-friendly")
+end
+
+function T.setstate_rejects_bad_values(t)
+  local r = RNG.new(41)
+  local before = r:getState()
+  local bad = { "7", 0, -1, 2147483647, 1.5, 0 / 0, 1 / 0, {}, true }
+  for i = 1, #bad do
+    t.eq(r:setState(bad[i]), false, "rejects bad value #" .. i)
+    t.eq(r:getState(), before, "state unchanged after bad value #" .. i)
+  end
+  t.eq(r:setState(nil), false, "rejects nil")
+  t.eq(r:getState(), before, "state unchanged after nil")
+end
+
 return T

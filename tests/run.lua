@@ -33,6 +33,12 @@ local FILES = {
   "tests.test_pool",
   "tests.test_json",
   "tests.test_save",
+  "tests.test_runsave",
+  "tests.test_countdown",
+  "tests.test_game_resume",
+  "tests.test_pause_save",
+  "tests.test_app_lifecycle",
+  "tests.test_menu_continue",
   "tests.test_damage",
   "tests.test_leveling",
   "tests.test_pickups",
@@ -47,6 +53,10 @@ local FILES = {
 }
 
 function M.runAll()
+  -- Under LÖVE, tests that call Save.reset()/write() would overwrite the player's
+  -- real save.json / run.json. Give the whole suite an in-memory filesystem.
+  local realFs = love and love.filesystem
+  if realFs then love.filesystem = require("tests.support").memoryFilesystem() end
   local passed, failed = 0, 0
   for _, modname in ipairs(FILES) do
     local okLoad, tests = pcall(require, modname)
@@ -70,6 +80,7 @@ function M.runAll()
       end
     end
   end
+  if realFs then love.filesystem = realFs end
   print(string.format("%d passed, %d failed", passed, failed))
   return failed
 end
