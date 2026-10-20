@@ -309,6 +309,101 @@ function T.pause_without_a_game_still_works_for_resume(t)
   teardown()
 end
 
+-- ---------------------------------------------------- app lifecycle (main.lua)
+
+-- main.lua's love.focus / love.quit, loaded into a sandbox so the real file is
+-- exercised without redefining the live `love` callbacks. `require` inside the
+-- hooks is pointed at the test's Game (the one with stubbed rendering).
+local function withMainHooks(fn)
+  local env = setmetatable({ love = {} }, { __index = _G })
+  local chunk = assert(loadfile("main.lua"))
+  setfenv(chunk, env)
+  chunk()
+  package.loaded["src.states.game"] = Game
+  local ok, err = pcall(fn, env.love)
+  package.loaded["src.states.game"] = nil
+  assert(ok, err)
+end
+
+function T.losing_focus_saves_the_run(t)
+  setup()
+  played()
+  Save.clearRun()
+  withMainHooks(function(hooks)
+    hooks.focus(false)
+  end)
+  local run = Save.run()
+  t.ok(run, "backgrounding the app wrote the run")
+  t.eq(run.hp, 37.5)
+  teardown()
+end
+
+function T.gaining_focus_does_not_save(t)
+  setup()
+  played()
+  Save.clearRun()
+  withMainHooks(function(hooks)
+    hooks.focus(true)
+  end)
+  t.eq(Save.run(), nil)
+  teardown()
+end
+
+function T.quitting_saves_the_run_and_lets_the_app_close(t)
+  setup()
+  played()
+  Save.clearRun()
+  local result
+  withMainHooks(function(hooks)
+    result = hooks.quit()
+  end)
+  t.eq(result, false, "love.quit must not veto the close")
+  t.ok(Save.run(), "closing the window wrote the run")
+  teardown()
+end
+
+function T.quitting_during_a_levelup_draft_keeps_the_draft(t)
+  setup()
+  played()
+  Game.world.pendingLevelUps = 0
+  StateM.push("levelup")
+  Save.clearRun()
+  withMainHooks(function(hooks)
+    hooks.quit()
+  end)
+  t.eq(Save.run().pendingLevelUps, 1)
+  teardown()
+end
+
+function T.lifecycle_hooks_save_nothing_when_no_run_is_active(t)
+  setup()
+  played()
+  StateM.switch("menu") -- the run is over; the old world is still referenced
+  Save.clearRun()
+  withMainHooks(function(hooks)
+    hooks.focus(false)
+    hooks.quit()
+  end)
+  t.eq(Save.run(), nil)
+  teardown()
+end
+
+function T.a_failing_save_never_blocks_backgrounding_or_quitting(t)
+  setup()
+  local env = setmetatable({ love = {} }, { __index = _G })
+  local chunk = assert(loadfile("main.lua"))
+  setfenv(chunk, env)
+  chunk()
+  package.loaded["src.states.game"] = { saveRun = function() error("disk full") end }
+  local okFocus = pcall(env.love.focus, false)
+  local okQuit, result = pcall(env.love.quit)
+  package.loaded["src.states.game"] = nil
+  t.eq(okFocus, true, "focus hook swallowed the error")
+  t.eq(okQuit, true, "quit hook swallowed the error")
+  t.eq(result, false)
+  teardown()
+end
+
 -- ----------------------------------------------------------------- autosave
 
 function T.autosave_writes_about_every_ten_seconds(t)

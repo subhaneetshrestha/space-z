@@ -102,7 +102,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Files: `src/states/menu.lua`
   - Scope: S
 
-- [ ] **Task 8: Save on app background and quit**
+- [x] **Task 8: Save on app background and quit**
   - Description: Add `love.focus(f)` (on `false`) and extend `love.quit` to call `Game.saveRun()`. The existing smoke finalization in `love.quit` is untouched.
   - Acceptance:
     - [ ] Losing focus or closing the window mid-run writes the run; with no active run it does nothing.
