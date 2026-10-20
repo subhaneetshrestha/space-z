@@ -17,7 +17,7 @@ Plan: `tasks/plan.md`. Spec: `SPEC.md`. Tests: `lua tests/run.lua`. Work on a br
   - Files: `tests/test_boss.lua` (new), `tests/run.lua` (register file), `src/systems/boss.lua`
   - Scope: S-M (3 files)
 
-- [ ] **Task 2: Leviathan eases back to hover after each dive**
+- [x] **Task 2: Leviathan eases back to hover after each dive**
   - Description: When the leviathan returns from `rise` to `hover`, blend from its current position to the hover path over `HOVER_BLEND` (0.6 s, smoothstep) instead of snapping.
   - Acceptance:
     - [ ] With the player at a far-off column, every step of a 15 s simulation moves the leviathan at most 14 px outside `dive` and `rise` states (current: 228 and 244 px snaps).

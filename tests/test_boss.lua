@@ -19,6 +19,7 @@ local function fakeWorld(playerX)
     enemies = {}, ebullets = {},
     pools = { enemies = Pool.new(), ebullets = Pool.new() },
     player = { x = playerX or 240, y = 600 },
+    zoneTime = 0, -- read by Spawner.spawnEnemy when a boss drops adds
     pulseT = 0,
     boss = nil,
   }
@@ -90,6 +91,48 @@ function T.boss_first_behavior_step_stays_at_arena_position(t)
     end
   end
   expectNone(t, bad, "boss left its arrival pose on the first behavior step")
+end
+
+-- Leviathan: hover/telegraph/dive/rise. Dive and rise are fast on purpose; every
+-- other step (notably the first one back in hover) must stay smooth.
+local HOVER_STEP_LIMIT = 14 -- px per step; the return blend peaks near 12
+
+function T.leviathan_eases_back_to_hover_after_a_dive(t)
+  local w = fakeWorld(40) -- far from centre so every dive ends well off-path
+  local e = stepToArrival(w, "mining_leviathan")
+  local px, py = e.x, e.y
+  local dives, worst, worstDesc = 0, 0, ""
+  local prevState = e.state
+  local hoverSince = nil
+  local offPath, offPathDesc = 0, ""
+  for step = 1, 60 * 20 do
+    Boss.update(w, DT)
+    local d = dist(e.x, e.y, px, py)
+    if e.state ~= "dive" and e.state ~= "rise" and d > worst then
+      worst = d
+      worstDesc = string.format("step %d, state %s after %s", step, e.state, prevState)
+    end
+    if prevState == "dive" and e.state == "rise" then dives = dives + 1 end
+    if e.state == "hover" then
+      if prevState ~= "hover" then hoverSince = step end
+      if dives > 0 and hoverSince and (step - hoverSince) >= 45 then -- 0.75 s in
+        local dx = e.x - (VW * 0.5 + math.sin(e.bt * 0.8) * 130)
+        if math.abs(dx) > offPath then
+          offPath = math.abs(dx)
+          offPathDesc = string.format("step %d", step)
+        end
+      end
+    end
+    prevState = e.state
+    px, py = e.x, e.y
+  end
+  t.ok(dives >= 2, "simulation saw " .. dives .. " dives, expected at least 2")
+  t.ok(worst <= HOVER_STEP_LIMIT, string.format(
+    "leviathan moved %.1f px in one step outside dive/rise (%s), limit %d",
+    worst, worstDesc, HOVER_STEP_LIMIT))
+  t.ok(offPath <= 1, string.format(
+    "leviathan still %.1f px off the hover path 0.75 s after returning (%s)",
+    offPath, offPathDesc))
 end
 
 return T

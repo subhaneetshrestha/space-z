@@ -129,19 +129,32 @@ behaviors.kessler = {
 
 -- Zone 2 — Mining Leviathan: hovers dropping meteors, telegraphs, then drills
 -- straight down at the player's column and grinds back up.
+local HOVER_BLEND = 0.6 -- s to ease from the post-dive pose back onto the hover path
+
+local function hoverPos(bt)
+  return VW * 0.5 + sin(bt * 0.8) * 130, 170 + sin(bt * 2.1) * 8
+end
+
 behaviors.leviathan = {
   arenaY = 170,
   init = function(e)
     e.state, e.stateT, e.meteorT = "hover", 4, 2.2
     e.baseX = e.x
+    e.hoverOffX, e.hoverOffY, e.hoverT = 0, 0, HOVER_BLEND
   end,
   update = function(world, e, dt, phase2)
     local player = world.player
     e.stateT = e.stateT - dt
 
     if e.state == "hover" then
-      e.x = VW * 0.5 + sin(e.bt * 0.8) * 130
-      e.y = 170 + sin(e.bt * 2.1) * 8
+      -- the hover path is absolute, so after a dive carry the leftover offset
+      -- and let it fade out instead of snapping onto the path
+      local hx, hy = hoverPos(e.bt)
+      e.hoverT = e.hoverT + dt
+      local k = e.hoverT / HOVER_BLEND
+      k = k >= 1 and 1 or k * k * (3 - 2 * k)
+      e.x = hx + e.hoverOffX * (1 - k)
+      e.y = hy + e.hoverOffY * (1 - k)
       e.meteorT = e.meteorT - dt
       if e.meteorT <= 0 then
         e.meteorT = e.meteorT + (phase2 and 1.5 or 2.2)
@@ -178,6 +191,8 @@ behaviors.leviathan = {
       if e.y <= 170 then
         e.y = 170
         e.state, e.stateT = "hover", phase2 and 2.5 or 4
+        local hx, hy = hoverPos(e.bt)
+        e.hoverOffX, e.hoverOffY, e.hoverT = e.x - hx, e.y - hy, 0
       end
     end
   end,
