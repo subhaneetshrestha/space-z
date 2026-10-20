@@ -15,6 +15,7 @@ local MISSILE_R = 6
 local DRONE_R = 8
 local HOMING_TURN = 3.5      -- rad/s
 local DRONE_HIT_CD = 0.5
+M.DRONE_HIT_CD = DRONE_HIT_CD -- run saves bound a saved drone cooldown by it
 local ARC_RETRY = 0.2        -- retry delay when no target in range
 local CHAIN_RANGE2 = 120 * 120
 local ARC_LIFE = 0.15

@@ -13,16 +13,21 @@
 local Viewport = require("src.core.viewport")
 local Enemies = require("src.content.enemies")
 local Weapons = require("src.content.weapons")
+local Pickups = require("src.systems.pickups")
+local WeaponSystem = require("src.systems.weapons")
 
 local M = {}
 
 local VW, VH = Viewport.VW, Viewport.VH
+local TWO_PI = 2 * math.pi
 
 -- Provisional caps: one smoke run peaks at ~190 live entities of all kinds. The final
 -- figures are set from measured worst cases (task A6); they only reject corrupt files.
 M.MAX_ENEMIES = 600
 M.MAX_BULLETS = 1500
 M.MAX_EBULLETS = 2000
+M.MAX_PICKUPS = 1500
+M.MAX_DRONES = 16 -- the biggest weapon level has 6
 
 -- ------------------------------------------------------------------ helpers
 
@@ -371,6 +376,184 @@ function M.validEbullets(list)
   if not isSequence(list) or #list > M.MAX_EBULLETS then return false end
   for i = 1, #list do
     if not validEbullet(list[i]) then return false end
+  end
+  return true
+end
+
+-- ------------------------------------------------------------------ pickups
+-- XP gems (pickups.lua). The sprite is a tier of the value, so it is derived.
+
+local PICKUP_FIELDS = set({
+  "ptype", "x", "y", "vx", "vy", "r", "rot", "scale", "t", "value", "magnet",
+})
+local PICKUP_DERIVED = set({ "kind", "sprite", "dead" })
+
+function M.unclassifiedPickupKeys(p)
+  return unclassified(p, PICKUP_FIELDS, nil, PICKUP_DERIVED)
+end
+
+function M.capturePickups(list)
+  local out = {}
+  for i = 1, #list do
+    local p = list[i]
+    if not p.dead then
+      local s = {}
+      for k in pairs(PICKUP_FIELDS) do s[k] = p[k] end
+      out[#out + 1] = s
+    end
+  end
+  return out
+end
+
+function M.restorePickups(world, entries)
+  local list, pool = world.pickups, world.pools.pickups
+  clear(list, pool)
+  for i = 1, #entries do
+    local s = entries[i]
+    local p = pool:acquire()
+    p.kind = "pickup"
+    p.dead = false
+    for k in pairs(PICKUP_FIELDS) do p[k] = s[k] end
+    p.sprite = Pickups.tierSprite(s.value)
+    list[i] = p
+  end
+end
+
+-- a gem is culled once it falls 40 px below the screen; the magnet pulls it at <= 700
+local PICKUP_RANGE = {
+  x = { -400, VW + 400 }, y = { -400, VH + 200 },
+  vx = { -5000, 5000 }, vy = { -5000, 5000 },
+  r = { 0.1, 100 }, rot = { -1e4, 1e4 }, scale = { 0.1, 10 }, t = { 0, 1e7 },
+  value = { 1e-6, 1e6 },
+}
+
+local function validPickup(s)
+  if type(s) ~= "table" or s.ptype ~= "xp" or type(s.magnet) ~= "boolean" then return false end
+  for k in pairs(s) do
+    if not PICKUP_FIELDS[k] then return false end
+  end
+  for k, bounds in pairs(PICKUP_RANGE) do
+    if not inRange(s[k], bounds[1], bounds[2]) then return false end
+  end
+  return true
+end
+
+function M.validPickups(list)
+  if not isSequence(list) or #list > M.MAX_PICKUPS then return false end
+  for i = 1, #list do
+    if not validPickup(list[i]) then return false end
+  end
+  return true
+end
+
+-- ------------------------------------------------------------------- drones
+-- Orbit drones (weapons.lua updateOrbital). `damage`, `orbitR` and `angVel` are
+-- rewritten from the weapon level every frame but are saved too, so a restored drone
+-- is complete before its first update. `hitCd` is keyed by enemy table, so it is saved
+-- as { enemy slot, expiry } pairs, and only the cooldowns still running: an expired
+-- one acts exactly like none. `hitCdN` only decides when that cache is tidied, so it
+-- is rebuilt.
+
+local DRONE_FIELDS = set({
+  "x", "y", "vx", "vy", "r", "rot", "scale", "t", "angle", "damage", "orbitR", "angVel",
+})
+local DRONE_SPECIAL = set({ "hitCd" })
+local DRONE_DERIVED = set({ "kind", "sprite", "dead", "hitCdN" })
+
+function M.unclassifiedDroneKeys(d)
+  return unclassified(d, DRONE_FIELDS, DRONE_SPECIAL, DRONE_DERIVED)
+end
+
+-- time: world.time; slotOf: the map captureEnemies returned
+function M.captureDrones(list, slotOf, time)
+  local out = {}
+  for i = 1, #list do
+    local d = list[i]
+    if not d.dead then
+      local s = { hitCd = {} }
+      for k in pairs(DRONE_FIELDS) do s[k] = d[k] end
+      for enemy, expiry in pairs(d.hitCd or {}) do
+        local slot = slotOf[enemy]
+        if slot and expiry > time then s.hitCd[#s.hitCd + 1] = { slot, expiry } end
+      end
+      table.sort(s.hitCd, function(a, b) return a[1] < b[1] end)
+      out[#out + 1] = s
+    end
+  end
+  return out
+end
+
+-- Call after restoreEnemies: a cooldown is a slot in world.enemies.
+function M.restoreDrones(world, entries)
+  local list, pool = world.drones, world.pools.drones
+  clear(list, pool)
+  for i = 1, #entries do
+    local s = entries[i]
+    local d = pool:acquire()
+    d.kind = "drone"
+    d.sprite = "drone"
+    d.dead = false
+    for k in pairs(DRONE_FIELDS) do d[k] = s[k] end
+    d.hitCd = {}
+    for j = 1, #s.hitCd do
+      d.hitCd[world.enemies[s.hitCd[j][1]]] = s.hitCd[j][2]
+    end
+    d.hitCdN = #s.hitCd
+    list[i] = d
+  end
+end
+
+local DRONE_RANGE = {
+  x = { -300, VW + 300 }, y = { -300, VH + 300 },
+  vx = { -5000, 5000 }, vy = { -5000, 5000 },
+  r = { 0.1, 100 }, rot = { -1e4, 1e4 }, scale = { 0.1, 10 }, t = { 0, 1e7 },
+  angle = { 0, TWO_PI * (1 + 1e-9) }, -- updateOrbital wraps it at a full turn
+  damage = { 0, 1e7 }, orbitR = { 1, 500 }, angVel = { -50, 50 },
+}
+
+local function validDrone(s, nEnemies, time)
+  if type(s) ~= "table" then return false end
+  for k in pairs(s) do
+    if not DRONE_FIELDS[k] and not DRONE_SPECIAL[k] then return false end
+  end
+  for k, bounds in pairs(DRONE_RANGE) do
+    if not inRange(s[k], bounds[1], bounds[2]) then return false end
+  end
+  local cds = s.hitCd
+  if not isSequence(cds) or #cds > nEnemies then return false end
+  local seen = {}
+  for j = 1, #cds do
+    local c = cds[j]
+    if not isSequence(c) or #c ~= 2 then return false end
+    local slot, expiry = c[1], c[2]
+    if not (isNum(slot) and slot == math.floor(slot) and slot >= 1 and slot <= nEnemies) or seen[slot] then
+      return false
+    end
+    seen[slot] = true
+    -- still running: it started at or before `time`, and lasts DRONE_HIT_CD
+    if not inRange(expiry, time + 1e-12, time + WeaponSystem.DRONE_HIT_CD * (1 + 1e-9)) then
+      return false
+    end
+  end
+  return true
+end
+
+-- Whether the saved build holds an orbital weapon: without one nothing updates the
+-- drones, so a save that has drones anyway is not one the game could have written.
+function M.ownsOrbital(weaponList)
+  for i = 1, #weaponList do
+    local def = Weapons[weaponList[i].id]
+    if def and def.behavior == "orbital" then return true end
+  end
+  return false
+end
+
+-- nEnemies and time come from the same save; ownsOrbital from its weapons
+function M.validDrones(list, nEnemies, time, ownsOrbital)
+  if not isSequence(list) or #list > M.MAX_DRONES then return false end
+  if #list > 0 and not ownsOrbital then return false end
+  for i = 1, #list do
+    if not validDrone(list[i], nEnemies, time) then return false end
   end
   return true
 end

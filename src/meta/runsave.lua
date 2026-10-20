@@ -99,11 +99,13 @@ function M.snapshot(world, opts)
   }
   -- the boss and warp phases still rewind to an empty field (changed in A5)
   local enemies, slotOf = {}, {}
-  run.bullets, run.ebullets = {}, {}
+  run.bullets, run.ebullets, run.pickups, run.drones = {}, {}, {}, {}
   if world.phase == "waves" then
     enemies, slotOf = Entities.captureEnemies(world.enemies or {})
     run.bullets = Entities.captureBullets(world.bullets or {}, slotOf)
     run.ebullets = Entities.captureEbullets(world.ebullets or {})
+    run.pickups = Entities.capturePickups(world.pickups or {})
+    run.drones = Entities.captureDrones(world.drones or {}, slotOf, world.time)
   end
   run.enemies = enemies
   for i = 1, #STREAMS do
@@ -251,7 +253,10 @@ function M.validate(run)
   if exact and not (validPlayer(run.player) and validRunning(run.timers)
       and Entities.validEnemies(run.enemies)
       and Entities.validBullets(run.bullets, #run.enemies)
-      and Entities.validEbullets(run.ebullets)) then
+      and Entities.validEbullets(run.ebullets)
+      and Entities.validPickups(run.pickups)
+      and Entities.validDrones(run.drones, #run.enemies, run.time,
+        Entities.ownsOrbital(run.weapons))) then
     return false
   end
 
@@ -301,6 +306,8 @@ function M.apply(world, run)
   Entities.restoreEnemies(world, exact and run.enemies or {})
   Entities.restoreBullets(world, exact and run.bullets or {})
   Entities.restoreEbullets(world, exact and run.ebullets or {})
+  Entities.restorePickups(world, exact and run.pickups or {})
+  Entities.restoreDrones(world, exact and run.drones or {})
 
   world.level = run.level
   world.xp = run.xp

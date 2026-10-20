@@ -15,6 +15,8 @@ local function tierSprite(value)
   return "pickup_xp1"
 end
 
+M.tierSprite = tierSprite -- run saves rebuild a gem's sprite from its value
+
 function M.xpForLevel(level)
   return floor(8 + 6 * (level - 1) ^ 1.35)
 end

@@ -34,7 +34,6 @@ end
 -- equal views play out identically, so firstDiff over views is the "did the resume
 -- change anything?" check used by the behavioural-identity tests.
 
-local ENTITY_LISTS = { "enemies", "ebullets", "bullets", "pickups", "drones" }
 local WORLD_SCALARS = {
   "mode", "seed", "time", "distance", "zoneIndex", "zoneTime", "zoneStartDistance",
   "phase", "warpT", "level", "xp", "xpNext", "pendingLevelUps", "kills", "bossKills",
@@ -42,12 +41,17 @@ local WORLD_SCALARS = {
 }
 local PLAYER_FIELDS = { "x", "y", "vx", "vy", "hp", "maxhp", "invulnT", "dead" }
 
+-- bookkeeping that only decides when a cache is tidied, never what happens
+local BOOKKEEPING = { hitCdN = true }
+
 -- every number / string / boolean field of an entity; a def is reduced to its id
 local function entityView(e)
   local v = {}
   for k, val in pairs(e) do
     local ty = type(val)
-    if ty == "number" or ty == "string" or ty == "boolean" then
+    if BOOKKEEPING[k] then
+      -- left out
+    elseif ty == "number" or ty == "string" or ty == "boolean" then
       v[k] = val
     elseif (k == "def" or k == "bossDef") and type(val) == "table" then
       v[k] = val.id
@@ -80,11 +84,34 @@ function M.worldView(w)
     view.spawnerTimers[i] = v
   end
 
-  -- lists keep their order: collision stops at the first hit in list order
-  for _, name in ipairs(ENTITY_LISTS) do
+  -- Lists keep their order: collision stops at the first hit in list order. Entities
+  -- that point at others (a missile's target, a drone's hit cooldowns, world.boss) are
+  -- compared by the pointed-at enemy's slot, so a lost or wrong link shows up.
+  local slotOf = {}
+  view.enemies = {}
+  for _, e in ipairs(w.enemies or {}) do
+    if not e.dead then
+      view.enemies[#view.enemies + 1] = entityView(e)
+      slotOf[e] = #view.enemies
+    end
+  end
+  view.boss = w.boss and slotOf[w.boss] or nil
+
+  for _, name in ipairs({ "ebullets", "bullets", "pickups", "drones" }) do
     local list = {}
-    for i, e in ipairs(w[name] or {}) do
-      if not e.dead then list[#list + 1] = entityView(e) end
+    for _, e in ipairs(w[name] or {}) do
+      if not e.dead then
+        local v = entityView(e)
+        if name == "bullets" and e.target then v.targetSlot = slotOf[e.target] end
+        if name == "drones" then
+          -- only cooldowns still running count: an expired one acts like none
+          v.hitCd = {}
+          for enemy, expiry in pairs(e.hitCd or {}) do
+            if slotOf[enemy] and expiry > w.time then v.hitCd[slotOf[enemy]] = expiry end
+          end
+        end
+        list[#list + 1] = v
+      end
     end
     view[name] = list
   end
@@ -201,7 +228,7 @@ function M.validRun2(over)
     player = { x = 240, y = 518, vx = 0, vy = 0, invulnT = 0 },
     timers = { freezeT = 0, shieldT = 0, pulseT = 0, hpRingT = 0 },
     weapons = { { id = "blaster", level = 2, cooldown = 0.15 } },
-    enemies = {}, bullets = {}, ebullets = {},
+    enemies = {}, bullets = {}, ebullets = {}, pickups = {}, drones = {},
   })
   for k, v in pairs(over or {}) do run[k] = v end
   return run

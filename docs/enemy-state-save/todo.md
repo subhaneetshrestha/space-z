@@ -80,7 +80,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/meta/runsave_entities.lua`, `src/meta/runsave.lua`, `tests/test_runsave_entities.lua`
   - Scope: S
 
-- [ ] **A4: Pickups and drones**
+- [x] **A4: Pickups and drones** (530/0 headless and on LÖVE 12, smoke OK. Negative controls: losing drone cooldowns, the orbit angle, a gem's magnet state, or gem order each fail the suite. Drone `hitCd` is saved as `{ enemy slot, expiry }` pairs, only for cooldowns still running. `Support.worldView` now compares a missile's target and a drone's cooldowns by slot, which also hardens the A3 tests. Two one-line exports in production code: `Pickups.tierSprite`, `Weapons.DRONE_HIT_CD`. Left as is: the original lets a stale cooldown key follow a recycled pool table onto a new enemy; saves drop such entries, which only removes a ≤0.5 s accidental delay.)
   - Description: Capture and restore XP gems (`value`, `magnet`, velocity, `t`) and orbit drones (`angle`, `t`, `hitCdN`, `hitCd` as `{ enemyIndex, expiry }` pairs).
   - Acceptance:
     - [ ] Criterion 1 and 2 for pickups and drones: the orbit continues without a jump, and a drone does not re-hit an enemy that was on cooldown.
