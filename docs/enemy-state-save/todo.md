@@ -42,7 +42,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 
 ## Phase 2: Exact snapshot
 
-- [ ] **A1: Version 2 envelope, player, world state, diff helper**
+- [x] **A1: Version 2 envelope, player, world state, diff helper** (headless 322/0 and `--test` 322/0 on LÖVE 12. Deviation: `phase` and `warpT` move to A5, since until the boss rewind is removed they would always be `"waves"` / `0`. `Support.worldDiff` also covers the entity lists already, so A2 only adds capture. Tests that asserted the old reset behaviour were replaced by version-1 (legacy) and version-2 versions.)
   - Description: Bump `RUN_VERSION` to 2 and add `player` (position, velocity, `invulnT`, `shieldT`, `pulseT`, `hpRingT`), `world` extras (`freezeT`, `phase`, `warpT`), and each weapon's `cooldown`, `side`, `tickT`. `validate` accepts version 1 (no entities) and version 2. Add `Support.worldDiff(a, b)` to `tests/support.lua`: compares two worlds' simulation state (player, lists, scalars) with the 14-digit tolerance, returning the first difference. Keep the `boss`/`warp` rewind for now (removed in A5).
   - Acceptance:
     - [ ] Criterion 1 for the new player/world fields: snapshot, JSON, validate, apply gives equal values (fractional HP included).
@@ -93,7 +93,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Scope: S
 
 - [ ] **A5: Boss and phase rules**
-  - Description: Capture the boss as part of the enemy list (all behaviour scratch for the seven behaviours) and restore `world.boss` as a reference into it. Delete the `boss` and `warp` rewind code from `snapshot`. `warp` resumes as `warp` with the remaining `warpT`, including the last zone. When the restored phase is `boss`, `game:enter` plays the boss music and does not emit `boss_spawned`. Replace the old tests that encode the rewind (see below).
+  - Description: Capture the boss as part of the enemy list (all behaviour scratch for the seven behaviours) and restore `world.boss` as a reference into it. Add `phase` and `warpT` to the snapshot (moved here from A1). Delete the `boss` and `warp` rewind code from `snapshot`. `warp` resumes as `warp` with the remaining `warpT`, including the last zone. When the restored phase is `boss`, `game:enter` plays the boss music and does not emit `boss_spawned`. Replace the old tests that encode the rewind (see below).
   - Acceptance:
     - [ ] Criterion 2 for each of the seven bosses, from a mid-barrage moment (and `entering` for one), 600 frames.
     - [ ] Criterion 4: no heal, no rewind, no duplicate boss, `bossKills` unchanged, no extra `zone_completed`.

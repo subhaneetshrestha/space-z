@@ -28,6 +28,74 @@ function M.firstDiff(a, b, path)
   return nil
 end
 
+-- ----------------------------------------------------------------- worldDiff
+-- Plain-data view of everything that decides how a run plays out, and nothing that
+-- is only drawn (particles, arcs, beams, pulses, toasts, shake). Two worlds with
+-- equal views play out identically, so firstDiff over views is the "did the resume
+-- change anything?" check used by the behavioural-identity tests.
+
+local ENTITY_LISTS = { "enemies", "ebullets", "bullets", "pickups", "drones" }
+local WORLD_SCALARS = {
+  "mode", "seed", "time", "distance", "zoneIndex", "zoneTime", "zoneStartDistance",
+  "phase", "warpT", "level", "xp", "xpNext", "pendingLevelUps", "kills", "bossKills",
+  "noDamage", "stardustEarned", "freezeT", "shieldT", "pulseT", "hpRingT",
+}
+local PLAYER_FIELDS = { "x", "y", "vx", "vy", "hp", "maxhp", "invulnT", "dead" }
+
+-- every number / string / boolean field of an entity; a def is reduced to its id
+local function entityView(e)
+  local v = {}
+  for k, val in pairs(e) do
+    local ty = type(val)
+    if ty == "number" or ty == "string" or ty == "boolean" then
+      v[k] = val
+    elseif (k == "def" or k == "bossDef") and type(val) == "table" then
+      v[k] = val.id
+    end
+  end
+  return v
+end
+
+function M.worldView(w)
+  local view = {}
+  for _, k in ipairs(WORLD_SCALARS) do view[k] = w[k] end
+
+  view.player = {}
+  for _, k in ipairs(PLAYER_FIELDS) do view.player[k] = w.player[k] end
+  view.player.ship = w.player.shipDef and w.player.shipDef.id
+
+  view.weapons, view.passives = {}, {}
+  for i, o in ipairs(w.weapons or {}) do
+    view.weapons[i] = { id = o.def.id, level = o.level, cooldown = o.cooldown,
+                        side = o.side, tickT = o.tickT }
+  end
+  for i, o in ipairs(w.passives or {}) do
+    view.passives[i] = { id = o.def.id, level = o.level }
+  end
+
+  view.rng = {}
+  for name, r in pairs(w.rng or {}) do view.rng[name] = r:getState() end
+  view.spawnerTimers = {}
+  for i, v in pairs(w.spawnerState and w.spawnerState.timers or {}) do
+    view.spawnerTimers[i] = v
+  end
+
+  -- lists keep their order: collision stops at the first hit in list order
+  for _, name in ipairs(ENTITY_LISTS) do
+    local list = {}
+    for i, e in ipairs(w[name] or {}) do
+      if not e.dead then list[#list + 1] = entityView(e) end
+    end
+    view[name] = list
+  end
+  return view
+end
+
+-- Path of the first difference between two worlds' simulation state, or nil.
+function M.worldDiff(a, b)
+  return M.firstDiff(M.worldView(a), M.worldView(b), "world")
+end
+
 function M.noop() end
 
 -- A table whose every missing key is a no-op function (stands in for a render or

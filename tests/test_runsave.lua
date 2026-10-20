@@ -31,10 +31,14 @@ local function fakeWorld(over)
     zoneIndex = 2, zone = Zones[2], zoneTime = 47.5, zoneStartDistance = 9000.5,
     level = 7, xp = 12.5, xpNext = 40, pendingLevelUps = 0,
     kills = 88, bossKills = 1, noDamage = false, stardustEarned = 25,
-    player = { hp = 37.5, maxhp = 100, dead = false, shipDef = Ships.aegis },
+    player = {
+      hp = 37.5, maxhp = 100, dead = false, shipDef = Ships.aegis,
+      x = 210.5, y = 500.25, vx = 12.5, vy = -30, invulnT = 0.4,
+    },
+    freezeT = 0.05, shieldT = 3.5, pulseT = 0, hpRingT = 1.25,
     weapons = {
-      { def = Weapons.blaster, level = 4, cooldown = 0.2 },
-      { def = Weapons.plasma_storm, level = 1, cooldown = 0.1 }, -- an evolved weapon
+      { def = Weapons.blaster, level = 4, cooldown = 0.2, side = -1 },
+      { def = Weapons.plasma_storm, level = 1, cooldown = 0.1, tickT = 0.03 }, -- an evolved weapon
     },
     passives = { { def = Upgrades.ammo_feed, level = 2 } },
     rng = rng,
@@ -52,7 +56,7 @@ end
 
 function T.snapshot_captures_identity_and_clocks(t)
   local run = RunSave.snapshot(fakeWorld())
-  t.eq(run.version, 1)
+  t.eq(run.version, 2, "new saves are version 2 (version 1 still loads, see validate)")
   t.eq(run.mode, "standard")
   t.eq(run.seed, 1000)
   t.eq(run.ship, "aegis", "the run's own ship, not settings.ship")
@@ -103,6 +107,33 @@ function T.snapshot_captures_rng_and_spawner_timers(t)
   t.eq(run.spawnerTimers[1][2], 0.4)
   t.eq(run.spawnerTimers[2][1], 3)
   t.eq(run.spawnerTimers[2][2], 1.2)
+end
+
+function T.snapshot_captures_the_player_exactly(t)
+  local p = RunSave.snapshot(fakeWorld()).player
+  t.eq(p.x, 210.5)
+  t.eq(p.y, 500.25)
+  t.eq(p.vx, 12.5)
+  t.eq(p.vy, -30)
+  t.eq(p.invulnT, 0.4, "i-frames carry over: a save must not strip them or grant them")
+end
+
+function T.snapshot_captures_the_running_timers(t)
+  local tm = RunSave.snapshot(fakeWorld()).timers
+  t.eq(tm.freezeT, 0.05, "hit-stop")
+  t.eq(tm.shieldT, 3.5, "shield recharge")
+  t.eq(tm.pulseT, 0)
+  t.eq(tm.hpRingT, 1.25)
+end
+
+function T.snapshot_captures_weapon_cooldowns_and_scratch(t)
+  local w = RunSave.snapshot(fakeWorld()).weapons
+  t.eq(w[1].cooldown, 0.2, "a save must not refill a weapon")
+  t.eq(w[1].side, -1, "homing launch side")
+  t.eq(w[1].tickT, nil, "scratch a weapon never set is not invented")
+  t.eq(w[2].cooldown, 0.1)
+  t.eq(w[2].tickT, 0.03, "beam / aura tick timer")
+  t.eq(w[2].side, nil)
 end
 
 function T.snapshot_without_spawner_state_has_no_timers(t)
@@ -207,7 +238,8 @@ local REJECTS = {
   not_a_table_nil = function() return nil end,
   not_a_table_string = function() return "run" end,
   not_a_table_number = function() return 5 end,
-  version_mismatch = function() local r = good(); r.version = 2; return r end,
+  version_unknown_future = function() local r = good(); r.version = 3; return r end,
+  version_zero = function() local r = good(); r.version = 0; return r end,
   version_missing = function() local r = good(); r.version = nil; return r end,
   mode_unknown = function() local r = good(); r.mode = "arcade"; return r end,
   mode_daily_not_resumable = function() local r = good(); r.mode = "daily"; return r end,
@@ -296,6 +328,35 @@ local REJECTS = {
     local r = good(); r.pendingLevelUps = r.level + 1; return r
   end,
   pending_level_ups_huge = function() local r = good(); r.pendingLevelUps = 1e9; return r end,
+  -- version 2: the player, the running timers and the weapon cooldowns are required
+  player_missing = function() local r = good(); r.player = nil; return r end,
+  player_wrong_type = function() local r = good(); r.player = 5; return r end,
+  player_x_missing = function() local r = good(); r.player.x = nil; return r end,
+  player_x_wrong_type = function() local r = good(); r.player.x = "210"; return r end,
+  player_x_nan = function() local r = good(); r.player.x = NAN; return r end,
+  player_x_off_screen = function() local r = good(); r.player.x = -50; return r end,
+  player_y_off_screen = function() local r = good(); r.player.y = 99999; return r end,
+  player_vx_absurd = function() local r = good(); r.player.vx = 1e6; return r end,
+  player_vy_infinite = function() local r = good(); r.player.vy = math.huge; return r end,
+  player_invuln_negative = function() local r = good(); r.player.invulnT = -1; return r end,
+  player_invuln_nan = function() local r = good(); r.player.invulnT = NAN; return r end,
+  timers_block_missing = function() local r = good(); r.timers = nil; return r end,
+  timer_freeze_missing = function() local r = good(); r.timers.freezeT = nil; return r end,
+  timer_freeze_negative = function() local r = good(); r.timers.freezeT = -0.5; return r end,
+  timer_shield_nan = function() local r = good(); r.timers.shieldT = NAN; return r end,
+  timer_pulse_wrong_type = function() local r = good(); r.timers.pulseT = "1"; return r end,
+  timer_hpring_infinite = function() local r = good(); r.timers.hpRingT = math.huge; return r end,
+  weapon_cooldown_missing = function() local r = good(); r.weapons[1].cooldown = nil; return r end,
+  weapon_cooldown_negative = function() local r = good(); r.weapons[1].cooldown = -1; return r end,
+  weapon_cooldown_nan = function() local r = good(); r.weapons[1].cooldown = NAN; return r end,
+  weapon_cooldown_would_silence_it_for_good = function()
+    local r = good(); r.weapons[1].cooldown = 1e9; return r
+  end,
+  weapon_side_not_a_side = function() local r = good(); r.weapons[1].side = 2; return r end,
+  weapon_tick_wrong_type = function() local r = good(); r.weapons[2].tickT = "0.03"; return r end,
+  weapon_tick_would_silence_it_for_good = function()
+    local r = good(); r.weapons[2].tickT = 1e9; return r
+  end,
 }
 
 for name, mutate in pairs(REJECTS) do
@@ -318,6 +379,36 @@ end
 function T.validate_accepts_pending_level_ups_up_to_the_level(t)
   local r = good()
   r.pendingLevelUps = r.level
+  t.eq(RunSave.validate(r), true)
+end
+
+-- Saves written before the exact snapshot (version 1) carry no player, timers or
+-- cooldowns. They must keep loading; they resume as they always did (spawn point,
+-- cooldowns ready), which is a one-time degradation, not an error.
+local function legacy(run)
+  run.version = 1
+  run.player, run.timers = nil, nil
+  for i = 1, #run.weapons do
+    run.weapons[i].cooldown, run.weapons[i].side, run.weapons[i].tickT = nil, nil, nil
+  end
+  return run
+end
+
+function T.validate_accepts_a_version_1_save_without_the_new_blocks(t)
+  t.eq(RunSave.validate(legacy(good())), true)
+  t.eq(RunSave.validate(Support.validRun()), true, "the shared v1 fixture")
+end
+
+function T.validate_ignores_version_2_fields_on_a_version_1_save(t)
+  local r = good()
+  r.version = 1 -- extras are simply not read
+  t.eq(RunSave.validate(r), true)
+end
+
+function T.validate_accepts_a_huge_invuln_timer(t)
+  -- the test harness (and a debug build) hold i-frames at 1e9; only NaN/negative are corrupt
+  local r = good()
+  r.player.invulnT = 1e9
   t.eq(RunSave.validate(r), true)
 end
 
@@ -347,7 +438,8 @@ local function freshWorld(seed, shipId)
     time = 0, distance = 0, scrollSpeed = 120,
     zoneIndex = 1, zone = Zones[1], zoneTime = 0, zoneStartDistance = 0,
     phase = "waves", warpT = 0,
-    player = { x = 240, y = 518, hp = ship.maxhp, maxhp = ship.maxhp,
+    player = { x = 240, y = 518, vx = 0, vy = 0, invulnT = 0,
+               hp = ship.maxhp, maxhp = ship.maxhp,
                dead = false, shipDef = ship, sprite = ship.sprite },
     enemies = {}, ebullets = {},
     pools = { enemies = Pool.new(), ebullets = Pool.new() },
@@ -442,12 +534,50 @@ function T.apply_clamps_hp_to_one_through_maxhp(t)
   t.eq(high.player.hp, high.player.maxhp)
 end
 
-function T.apply_zeroes_cooldowns_and_transient_timers(t)
+function T.apply_restores_cooldowns_and_running_timers(t)
   local a = playedWorld(10)
+  a.freezeT, a.pulseT = 0.04, 0.7
   local b = freshWorld(10)
   b.shieldT, b.hpRingT, b.freezeT, b.pulseT = 2, 2, 2, 2 -- stale values must go
   b.weapons[1].cooldown = 0.3
   RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.weapons[1].cooldown, 0.2, "weapon 1 cooldown as saved")
+  t.eq(b.weapons[2].cooldown, 0.9, "weapon 2 cooldown as saved")
+  t.near(b.shieldT, a.shieldT, 1e-9, "shieldT")
+  t.near(b.hpRingT, a.hpRingT, 1e-9, "hpRingT")
+  t.eq(b.freezeT, 0.04)
+  t.eq(b.pulseT, 0.7)
+end
+
+function T.apply_restores_weapon_scratch(t)
+  local a = playedWorld(10)
+  a.weapons[1].side, a.weapons[2].tickT = 1, 0.05
+  local b = freshWorld(10)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.weapons[1].side, 1)
+  t.eq(b.weapons[2].tickT, 0.05)
+  t.eq(b.weapons[2].side, nil, "scratch the weapon never had stays absent")
+end
+
+function T.apply_restores_the_player_where_it_was_flying(t)
+  local a = playedWorld(11)
+  a.player.x, a.player.y, a.player.vx, a.player.vy, a.player.invulnT = 301.25, 410.5, -44, 12, 0.6
+  local b = freshWorld(11)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.player.x, 301.25)
+  t.eq(b.player.y, 410.5)
+  t.eq(b.player.vx, -44)
+  t.eq(b.player.vy, 12)
+  t.eq(b.player.invulnT, 0.6)
+end
+
+function T.apply_of_a_version_1_save_zeroes_cooldowns_and_timers_and_uses_the_spawn_point(t)
+  local run = legacy(roundTrip(RunSave.snapshot(playedWorld(10))))
+  local b = freshWorld(10)
+  b.shieldT, b.hpRingT, b.freezeT, b.pulseT = 2, 2, 2, 2
+  b.player.invulnT = 3
+  b.weapons[1].cooldown = 0.3
+  t.eq(RunSave.apply(b, run), true)
   for i = 1, #b.weapons do
     t.eq(b.weapons[i].cooldown, 0, "weapon " .. i .. " cooldown")
   end
@@ -455,13 +585,9 @@ function T.apply_zeroes_cooldowns_and_transient_timers(t)
   t.eq(b.hpRingT, 0)
   t.eq(b.freezeT, 0)
   t.eq(b.pulseT, 0)
-end
-
-function T.apply_leaves_player_at_the_spawn_point(t)
-  local b = freshWorld(11)
-  RunSave.apply(b, roundTrip(RunSave.snapshot(playedWorld(11))))
-  t.eq(b.player.x, 240)
+  t.eq(b.player.x, 240, "spawn point")
   t.eq(b.player.y, 518)
+  t.eq(b.player.invulnT, 0)
 end
 
 function T.apply_keeps_the_weapon_and_passive_tables(t)
@@ -550,6 +676,59 @@ function T.apply_rejects_an_invalid_run_without_touching_the_world(t)
   t.eq(RunSave.apply(b, nil), false)
   t.ok(deepEqual(RunSave.snapshot(b), before), "world unchanged")
   t.eq(b.player.shipDef.id, "pathfinder")
+end
+
+-- --------------------------------------------------------------- worldDiff
+-- The helper the behavioural-identity tests (A2 onwards) lean on: it must see every
+-- piece of simulation state, and nothing cosmetic.
+
+function T.worlddiff_is_nil_for_a_world_and_its_restored_copy(t)
+  local a = playedWorld(21)
+  a.enemies = {} -- entities are saved from A2 on; until then worldDiff rightly sees them
+  local b = freshWorld(21)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(Support.worldDiff(a, b), nil)
+end
+
+function T.worlddiff_sees_a_moved_player(t)
+  local a, b = playedWorld(22), playedWorld(22)
+  b.player.x = b.player.x + 0.5
+  t.ok(Support.worldDiff(a, b):find("player"), Support.worldDiff(a, b))
+end
+
+function T.worlddiff_sees_a_weapon_cooldown_and_a_running_timer(t)
+  local a, b = playedWorld(23), playedWorld(23)
+  b.weapons[2].cooldown = b.weapons[2].cooldown + 0.1
+  t.ok(Support.worldDiff(a, b):find("weapons"), "cooldown")
+  local c, d = playedWorld(23), playedWorld(23)
+  d.freezeT = 0.2
+  t.ok(Support.worldDiff(c, d):find("freezeT"), "hit-stop")
+end
+
+function T.worlddiff_sees_the_rng_and_spawner_timers(t)
+  local a, b = playedWorld(24), playedWorld(24)
+  b.rng.cards:random()
+  t.ok(Support.worldDiff(a, b):find("rng"), "rng")
+  local c, d = playedWorld(24), playedWorld(24)
+  d.spawnerState.timers[1] = d.spawnerState.timers[1] + 0.25
+  t.ok(Support.worldDiff(c, d):find("spawnerTimers"), "spawner timers")
+end
+
+function T.worlddiff_sees_entities_in_the_lists_and_their_order(t)
+  local a, b = playedWorld(25), playedWorld(25)
+  a.enemies[1] = { kind = "enemy", x = 10, y = 20, hp = 5, def = { id = "drifter" } }
+  a.enemies[2] = { kind = "enemy", x = 30, y = 40, hp = 6, def = { id = "darter" } }
+  b.enemies[1] = { kind = "enemy", x = 10, y = 20, hp = 5, def = { id = "drifter" } }
+  b.enemies[2] = { kind = "enemy", x = 30, y = 40, hp = 6, def = { id = "darter" } }
+  t.eq(Support.worldDiff(a, b), nil, "equal lists")
+  b.enemies[1], b.enemies[2] = b.enemies[2], b.enemies[1]
+  t.ok(Support.worldDiff(a, b):find("enemies"), "same entities, different order, is a difference")
+end
+
+function T.worlddiff_ignores_cosmetic_state(t)
+  local a, b = playedWorld(26), playedWorld(26)
+  b.shake, b.particles, b.toasts = 9, { { x = 1 } }, { { text = "x" } }
+  t.eq(Support.worldDiff(a, b), nil)
 end
 
 -- ------------------------------------------------------------ Save helpers
