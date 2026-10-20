@@ -278,12 +278,47 @@ local REJECTS = {
     local r = good(); r.spawnerTimers[1][1] = #Zones[2].waves + 1; return r
   end,
   timers_value_nan = function() local r = good(); r.spawnerTimers[1][2] = NAN; return r end,
+  -- Spawner.update runs `while timer <= 0 do spawn; timer += interval end`: a
+  -- non-positive timer from a corrupt file would spawn for ~forever on resume.
+  timers_value_zero = function() local r = good(); r.spawnerTimers[1][2] = 0; return r end,
+  timers_value_hugely_negative = function() local r = good(); r.spawnerTimers[1][2] = -1e9; return r end,
+  timers_value_above_the_waves_interval = function()
+    local r = good(); r.spawnerTimers[1][2] = Zones[2].waves[1].interval * 1.01; return r
+  end,
+  timers_more_entries_than_waves = function()
+    local r = good()
+    r.spawnerTimers = {}
+    for i = 1, #Zones[2].waves + 1 do r.spawnerTimers[i] = { 1, 0.5 } end
+    return r
+  end,
+  -- one level-up draft opens per frame while this is > 0
+  pending_level_ups_above_the_level = function()
+    local r = good(); r.pendingLevelUps = r.level + 1; return r
+  end,
+  pending_level_ups_huge = function() local r = good(); r.pendingLevelUps = 1e9; return r end,
 }
 
 for name, mutate in pairs(REJECTS) do
   T["validate_rejects_" .. name] = function(t)
     t.eq(RunSave.validate(mutate()), false, name)
   end
+end
+
+function T.validate_accepts_a_timer_at_the_interval_even_after_json_rounding(t)
+  local interval = Zones[2].waves[1].interval
+  local r = good()
+  r.spawnerTimers[1][2] = interval
+  t.eq(RunSave.validate(r), true, "exactly the interval")
+  r.spawnerTimers[1][2] = interval * (1 + 1e-12) -- 14-digit JSON round-trip noise
+  t.eq(RunSave.validate(r), true, "interval plus rounding noise")
+  r.spawnerTimers[1][2] = 1e-9
+  t.eq(RunSave.validate(r), true, "about to fire")
+end
+
+function T.validate_accepts_pending_level_ups_up_to_the_level(t)
+  local r = good()
+  r.pendingLevelUps = r.level
+  t.eq(RunSave.validate(r), true)
 end
 
 function T.validate_never_throws_on_hostile_input(t)

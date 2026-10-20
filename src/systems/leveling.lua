@@ -12,6 +12,7 @@ local EVOLUTION_WEIGHT = 30
 
 local MAX_WEAPONS = 6
 local MAX_PASSIVES = 6
+M.MAX_WEAPONS, M.MAX_PASSIVES = MAX_WEAPONS, MAX_PASSIVES -- run saves validate against these
 
 local UPGRADE_WEIGHT = 10
 local NEW_WEIGHT = 8

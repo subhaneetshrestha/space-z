@@ -14,8 +14,8 @@ local M = {}
 local floor, huge = math.floor, math.huge
 
 local RUN_VERSION = 1
-local MAX_WEAPONS = 6  -- same caps as systems/leveling.lua
-local MAX_PASSIVES = 6
+local MAX_WEAPONS = Leveling.MAX_WEAPONS
+local MAX_PASSIVES = Leveling.MAX_PASSIVES
 local STREAMS = { "spawn", "drops", "cards", "misc" }
 
 -- -------------------------------------------------------------- snapshot
@@ -117,12 +117,21 @@ local function validOwned(list, defs, cap, wantKind)
   return true
 end
 
+-- { waveIndex, secondsLeft } pairs. Spawner.update loops `while timer <= 0` (adding
+-- the wave's interval each pass), so a live timer is always in (0, interval]; a
+-- value outside that from a corrupt file would spawn for ~forever on resume.
+-- The small tolerance covers json.lua's 14-digit float round trip.
+local TIMER_TOLERANCE = 1e-9
+
 local function validTimers(list, zone)
-  if type(list) ~= "table" then return false end
+  if type(list) ~= "table" or #list > #zone.waves then return false end
   for i = 1, #list do
     local e = list[i]
     if type(e) ~= "table" or not isInt(e[1]) or e[1] < 1 or e[1] > #zone.waves
         or not isNum(e[2]) then
+      return false
+    end
+    if e[2] <= 0 or e[2] > zone.waves[e[1]].interval * (1 + TIMER_TOLERANCE) then
       return false
     end
   end
@@ -147,7 +156,11 @@ function M.validate(run)
   end
   if not isInt(run.level) or run.level < 1 then return false end
   if not isNum(run.xpNext) or run.xpNext <= 0 then return false end
-  if not isInt(run.pendingLevelUps) or run.pendingLevelUps < 0 then return false end
+  -- one draft opens per frame while this is > 0; it can never exceed the level
+  if not isInt(run.pendingLevelUps) or run.pendingLevelUps < 0
+      or run.pendingLevelUps > run.level then
+    return false
+  end
   if not isInt(run.kills) or run.kills < 0 then return false end
   if not isInt(run.bossKills) or run.bossKills < 0 then return false end
   if type(run.noDamage) ~= "boolean" then return false end
@@ -225,9 +238,8 @@ function M.apply(world, run)
 
   world.shieldT, world.hpRingT, world.freezeT, world.pulseT = 0, 0, 0, 0
 
-  -- stats from a clean slate (nil old stats == full hull), then the saved hull.
-  -- recomputeStats keeps already-taken damage, so it must not see a stale hp.
-  world.stats = nil
+  -- rebuild stats from the restored ship + passives, then set the saved hull
+  -- (recomputeStats alone would leave a full hull)
   Leveling.recomputeStats(world)
   player.hp = math.max(1, math.min(run.hp, player.maxhp))
   return true
