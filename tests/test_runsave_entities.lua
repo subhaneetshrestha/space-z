@@ -674,6 +674,15 @@ function T.validate_accepts_a_homing_missile_with_and_without_a_target(t)
   t.eq(RunSave.validate(runWithBullets({ m }, {}, live)), true, "retargeting next frame")
 end
 
+-- The game kills a bullet when its life is <= 0 and a gem or drone cooldown when it is
+-- over, so a live one can hold a value a hair above zero: float residue of
+-- `life - dt` repeated. A real run produced life = 1.04e-16; a lower bound of its own
+-- (the first version used 1e-9) rejects a save the game wrote itself.
+function T.validate_accepts_a_bullet_whose_life_is_a_hair_above_zero(t)
+  t.eq(RunSave.validate(runWithBullets({ bullet({ life = 1.0408340855860843e-16 }) })), true)
+  t.eq(RunSave.validate(runWithBullets({}, { ebullet({ life = 5e-17 }) })), true)
+end
+
 function T.validate_accepts_cryo_and_nuclear_bullet_extras(t)
   local b = bullet({ weaponId = "cryo", slowT = 1.5, slowMult = 0.5, pierce = 2 })
   local n = bullet({ weaponId = "nuclear_barrage", homing = 3.5, aoe = 90 })
@@ -1002,6 +1011,13 @@ end
 
 function T.validate_accepts_a_drone_cooldown_on_a_live_enemy(t)
   local d = drone({ hitCd = { { 1, 61.9 } } }) -- time 61.5, cooldown 0.5
+  t.eq(RunSave.validate(runWithField({ enemies = { VALID.drift }, drones = { d } })), true)
+end
+
+-- a cooldown that ends a hair after the save time is still running (see the bullet
+-- life test above: no invented epsilon on the "above zero" side)
+function T.validate_accepts_a_drone_cooldown_a_hair_past_the_save_time(t)
+  local d = drone({ hitCd = { { 1, 61.5 + 1e-14 } } }) -- run.time is 61.5
   t.eq(RunSave.validate(runWithField({ enemies = { VALID.drift }, drones = { d } })), true)
 end
 

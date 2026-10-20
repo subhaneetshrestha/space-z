@@ -106,7 +106,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/meta/runsave.lua`, `src/meta/runsave_entities.lua`, `src/states/game.lua`, `tests/test_runsave_entities.lua`, `tests/test_game_resume.lua`
   - Scope: M (5 files; `test_runsave.lua` updates may make it 6, so split the test replacement into a second commit)
 
-- [ ] **A6: Validation fuzz, caps, autosave cost**
+- [x] **A6: Validation fuzz, caps, autosave cost** (672/0 headless and on LÖVE 12, smoke identical to the first baseline. Results in `measurements.md`. Caps now 700 / 800 / 1000 / 800 / 16, each at least 4x the measured peak; autosave 4.1 ms worst, 57 KB worst: within the spec's 5 ms and 256 KB, so no need to stop and ask. **Two more validation bugs found by sampling real runs** (a bullet `life` of 1.04e-16 and a drone cooldown a hair past the save time were rejected because of an invented epsilon); both fixed, with a test that samples every autosave of real play. The fuzz found a bug in its own first version (a path-copy that dropped all but the first key, found by the negative controls). Phone check of the 10 to 20 ms projected autosave hitch is left for V1.)
   - Description: Measure the worst-case entity counts and the autosave cost, then set the validation caps and the budget. Add a fuzz test that mutates every field of a valid version-2 snapshot (wrong type, NaN, huge, negative, missing, out-of-range index) and requires "rejected, or restored without a hang or error".
   - Acceptance:
     - [ ] Criterion 6: every mutation is rejected or harmless, and no mutation loops (each case runs under a step limit).

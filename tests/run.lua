@@ -36,6 +36,8 @@ local FILES = {
   "tests.test_save",
   "tests.test_runsave",
   "tests.test_runsave_entities",
+  "tests.test_runsave_limits",
+  "tests.test_runsave_fuzz",
   "tests.test_countdown",
   "tests.test_game_resume",
   "tests.test_pause_save",

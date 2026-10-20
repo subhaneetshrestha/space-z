@@ -22,12 +22,17 @@ local M = {}
 local VW, VH = Viewport.VW, Viewport.VH
 local TWO_PI = 2 * math.pi
 
--- Provisional caps: one smoke run peaks at ~190 live entities of all kinds. The final
--- figures are set from measured worst cases (task A6); they only reject corrupt files.
-M.MAX_ENEMIES = 600
-M.MAX_BULLETS = 1500
-M.MAX_EBULLETS = 2000
-M.MAX_PICKUPS = 1500
+-- Caps on how many of each kind a save may hold. They only reject corrupt or edited
+-- files (and bound what restoring one can cost), so they sit well above anything the
+-- game produces and must never be tight: a cap that is hit by a real run throws that
+-- run away. The most alive at once across stress builds in every zone and boss fight
+-- (tests/measure_runsave.lua, docs/enemy-state-save/measurements.md):
+--   enemies 172, player bullets 131, enemy bullets 93, gems 129, drones 6
+-- tests/test_runsave_limits.lua keeps each cap at least 4x its measured peak.
+M.MAX_ENEMIES = 700
+M.MAX_BULLETS = 800
+M.MAX_EBULLETS = 1000
+M.MAX_PICKUPS = 800
 M.MAX_DRONES = 16 -- the biggest weapon level has 6
 
 -- ------------------------------------------------------------------ helpers
@@ -456,7 +461,7 @@ local BULLET_RANGE = {
   x = { -100, VW + 100 }, y = { -100, VH + 100 },
   vx = { -5000, 5000 }, vy = { -5000, 5000 },
   r = { 0.1, 100 }, scale = { 0.1, 10 }, rot = { -1e4, 1e4 }, t = { 0, 1e4 },
-  damage = { 0, 1e7 }, life = { 1e-9, 60 },
+  damage = { 0, 1e7 }, life = { 0, 60 }, -- and strictly above 0 (see validBullet / validEbullet)
   slowT = { 1e-3, 600 }, slowMult = { 0.01, 1 }, aoe = { 1, 1000 }, homing = { 0.01, 50 },
 }
 local EBULLET_RANGE = {
@@ -485,6 +490,9 @@ local function validBullet(s, nEnemies)
   if not (isNum(s.pierce) and s.pierce == math.floor(s.pierce) and s.pierce >= 0 and s.pierce <= 100) then
     return false
   end
+  -- the game kills a bullet at life <= 0, so a live one has any amount above it: float
+  -- residue of `life - dt` leaves values like 1e-16, and they are valid
+  if not (s.life > 0) then return false end
   -- steering (weapons.lua) only touches bullets with `homing`, and missiles always have it
   if (def.behavior == "homing") ~= (s.homing ~= nil) then return false end
   if s.target ~= nil then
@@ -504,7 +512,7 @@ local function validEbullet(s)
   for k in pairs(EBULLET_FIELDS) do
     if not inRange(s[k], EBULLET_RANGE[k][1], EBULLET_RANGE[k][2]) then return false end
   end
-  return true
+  return s.life > 0 -- see validBullet
 end
 
 -- nEnemies: how many enemies the same save holds (a target is a slot among them)
@@ -675,7 +683,7 @@ local function validDrone(s, nEnemies, time)
     end
     seen[slot] = true
     -- still running: it started at or before `time`, and lasts DRONE_HIT_CD
-    if not inRange(expiry, time + 1e-12, time + WeaponSystem.DRONE_HIT_CD * (1 + 1e-9)) then
+    if not (isNum(expiry) and expiry > time and expiry <= time + WeaponSystem.DRONE_HIT_CD * (1 + 1e-9)) then
       return false
     end
   end
