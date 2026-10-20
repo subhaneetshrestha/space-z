@@ -557,7 +557,7 @@ end
 function T.save_run_defaults_to_nil(t)
   Save.reset()
   t.eq(Save.run(), nil)
-  t.eq(Save.data().run, nil)
+  t.eq(Save.rawRun(), nil)
 end
 
 function T.save_setrun_then_run_returns_it(t)
@@ -570,7 +570,7 @@ end
 
 function T.save_run_returns_nil_for_an_invalid_stored_run(t)
   Save.reset()
-  Save.data().run = { version = 1, mode = "standard" } -- truncated / hand-edited
+  Save.setRun({ version = 1, mode = "standard" }) -- truncated / hand-edited
   t.eq(Save.run(), nil)
 end
 
@@ -579,7 +579,7 @@ function T.save_clearrun_removes_the_run(t)
   Save.setRun(good())
   Save.clearRun()
   t.eq(Save.run(), nil)
-  t.eq(Save.data().run, nil)
+  t.eq(Save.rawRun(), nil)
 end
 
 function T.save_reset_clears_the_run(t)

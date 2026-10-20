@@ -118,12 +118,12 @@ end
 
 function T.a_corrupt_save_shows_no_continue_and_does_not_block_launch(t)
   setup()
-  Save.data().run = { version = 1, mode = "standard" } -- truncated / hand-edited
+  Save.setRun({ version = 1, mode = "standard" }) -- truncated / hand-edited
   StateM.switch("menu")
   t.eq(table.concat(list(), "|"), "LAUNCH|DAILY RUN|HANGAR|STAR MAP")
   press("return")
   t.ok(started, "LAUNCH starts without a confirmation")
-  t.eq(Save.data().run, nil, "the unusable save is cleared")
+  t.eq(Save.rawRun(), nil, "the unusable save is cleared")
   teardown()
 end
 
