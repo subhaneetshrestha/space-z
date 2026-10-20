@@ -133,6 +133,17 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Files: PR; `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`
   - Scope: XS-S
 
+## Phase 5: Code-review follow-ups (done)
+
+- [x] **R1** Validation bounds spawner timers (0, wave interval], timer entry count, and `pendingLevelUps <= level`; one test per bound
+- [x] **R2** Run stored in `run.json`, never in `save.json`; `Save.rawRun()` added; tests cover separate file, reload, corrupt/invalid file, clear, reset
+- [x] **O2** `MAX_WEAPONS` / `MAX_PASSIVES` exported from `systems/leveling.lua`
+- [x] **O3** Shared test helpers (`tests/support.lua`, `tests/game_harness.lua`), game tests split into `test_game_resume` / `test_pause_save` / `test_app_lifecycle`, teardown guaranteed even when a test fails, suite runs on an in-memory filesystem under LÖVE
+- [x] **O4** `Menu.label` takes the already-built row list
+- [x] **N1** Removed the redundant `world.stats = nil` in `RunSave.apply`
+- [ ] **O1** (not changed, on purpose) saves made in the 2.5 s warp after the final boss: see the spec
+- [ ] **N2** (not changed) three validation calls on resume (menu, `game:enter`, `apply`): each is a trust boundary, cost is negligible
+
 ### Checkpoint: Complete
 - [ ] All acceptance criteria met
 - [ ] PR open for review; merge left to the human (merging to `main` publishes a release)

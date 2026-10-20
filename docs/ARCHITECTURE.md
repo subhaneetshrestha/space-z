@@ -477,7 +477,7 @@ launch input → `StateM.switch("game", { mode = "standard" })`.
 row is `CONTINUE` (default selection) → `StateM.switch("game", { resume = run, mode = run.mode,
 seed = run.seed })`. With a saved run, LAUNCH / DAILY RUN need two presses on the same row (the first
 arms it: the row reads `ABANDON SAVE? TAP AGAIN`; moving the selection or pressing another row
-disarms). Starting any new run calls `Save.clearRun()`. `M.rows(self)` / `M.label(self, i)` build the
+disarms). Starting any new run calls `Save.clearRun()`. `M.rows(self)` / `M.label(self, i, list)` build the
 rows (rebuilt per call: the MODE row's text changes).
 
 ### game.lua — `"game"` (the hub; owns world creation & orchestration)
@@ -674,19 +674,23 @@ Errors via `error()` on malformed input.
 Save.load() -> data      -- read "save.json" via love.filesystem (or defaults); validates/migrates
 Save.data() -> data      -- cached table (load() memoizes)
 Save.write()             -- serialize cached data
-Save.reset()
-Save.run() -> run|nil    -- the saved in-progress run, only if it passes RunSave.validate
-Save.setRun(run) -> ok   -- store + write
-Save.clearRun()          -- drop it (writes only if there was one)
+Save.reset()             -- fresh save.json AND deletes run.json
+-- the in-progress run lives in its OWN file, run.json (save.json is never touched by run saves):
+Save.run() -> run|nil    -- the saved run, only if it passes RunSave.validate
+Save.rawRun() -> table|nil -- the stored run as read, unvalidated (mostly for tests)
+Save.setRun(run) -> ok   -- store + write run.json only
+Save.clearRun()          -- forget it and delete run.json (an unreadable file too)
 -- defaults: { version=1, stardust=0, totalRuns=0, bestDistance=0, bestLevel=0,
---   unlocked={ blackhole=false }, settings={ sound=true, quality="high" }, run=nil }
--- load() strips the retired settings.steerMode key from older saves.
+--   unlocked={ blackhole=false }, settings={ sound=true, quality="high" } }
+-- load() strips the retired settings.steerMode key from older saves, and re-reads run.json.
 ```
 Headless-safe: if `love.filesystem` is nil (tests), keep data in memory only.
-`run` is optional, so old saves load unchanged and `version` stays 1.
+Why a separate file: the run is rewritten every ~10 s and on backgrounding; a torn write of
+`save.json` would reset all permanent progress (`Save.load` falls back to defaults on bad JSON), whereas a
+torn `run.json` just means "no saved run". `version` of save.json stays 1.
 
 ### runsave.lua — snapshot / validate / apply of an in-progress run
-Pure data, no `love.*`. One saved run at a time, under `save.run`.
+Pure data, no `love.*`. One saved run at a time, stored in `run.json` (see save.lua).
 ```lua
 RunSave.snapshot(world, { draftOpen = bool }) -> run | nil
 RunSave.validate(run) -> bool       -- untrusted input: any bad field means "no save"
@@ -701,6 +705,9 @@ Not saved: enemies, bullets, pickups, drones, particles, the boss, cooldowns and
 boss at full HP once the field is clear); a `warp`-phase run resumes at the start of the next zone
 (nil if that was the last zone). `maxhp` is recomputed by `Leveling.recomputeStats`; `hp` is clamped to
 `[1, maxhp]`. json.lua writes numbers with 14 significant digits, so clocks round-trip within ~1e-14.
+`validate` also bounds anything that drives a loop: each spawner timer must be in (0, that wave's interval]
+(`Spawner.update` loops `while timer <= 0`), at most one timer entry per wave, and `pendingLevelUps <= level`
+(one draft opens per frame). Weapon/passive caps come from `Leveling.MAX_WEAPONS` / `MAX_PASSIVES`.
 
 ### progress.lua
 `Progress.endRun(world, won) -> summary` — computes stardust per the formula in game.lua §,
@@ -719,9 +726,11 @@ Test files (minimum): `test_rng.lua` (determinism, ranges, shuffle), `test_pool.
 (xp→level curve incl. multi-level), `test_spawner.lua` (wave timeline counts vs simulated time,
 seeded determinism), `test_save.lua` (round-trip encode/decode, defaults, corrupt file → defaults),
 `test_json.lua`, `test_runsave.lua` (snapshot, validation, apply, determinism), `test_countdown.lua`,
-`test_game_resume.lua` / `test_menu_continue.lua` (the real game and menu states over the real state stack,
-with only render/audio modules stubbed; `test_game_resume` also loads `main.lua`'s focus/quit hooks in a
-sandbox), plus `tests/support.lua` (shared helpers; not in `run.lua`'s `FILES`). Tests construct minimal fake worlds (plain tables) — systems must not require
+`test_game_resume.lua` / `test_pause_save.lua` / `test_app_lifecycle.lua` / `test_menu_continue.lua` (the
+real game, pause and menu states over the real state stack, with only render/audio modules stubbed;
+`test_app_lifecycle` loads `main.lua`'s focus/quit hooks in a sandbox), plus `tests/support.lua` and
+`tests/game_harness.lua` (shared helpers; not in `run.lua`'s `FILES`). Under LÖVE, `run.lua` swaps in an
+in-memory `love.filesystem` for the whole suite, so tests never touch the player's real save files. Tests construct minimal fake worlds (plain tables) — systems must not require
 love APIs at module load time (render/* and ui/* excluded from tests; they may use love freely.
 `core/util.lua` guards its font cache behind `love ~= nil`).
 

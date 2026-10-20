@@ -4,7 +4,7 @@ Spec: `docs/run-save-resume/spec.md`. Task list: `docs/run-save-resume/todo.md`.
 
 ## Overview
 
-Add a single-slot, run-state save (`save.json` -> `run`), a CONTINUE menu row, autosave and
+Add a single-slot, run-state save (stored in its own `run.json`; originally planned as a `run` key in `save.json`, changed after review, see the spec's "Changes after code review"), a CONTINUE menu row, autosave and
 lifecycle saves, and a 3-2-1 countdown state used after resume-from-save and after pause RESUME.
 Daily runs are excluded. All data logic lives in one pure module so it is unit-tested headless;
 the LÖVE-facing states stay thin.

@@ -47,7 +47,7 @@ Not saved: transient timers (`shieldT`, `invulnT`, `freezeT`, flashes), cooldown
 
 ## Acceptance Criteria
 
-1. **Save data.** `save.json` gains an optional `run` table (`nil` = no saved run). Old saves load unchanged. `Save.reset()` clears it.
+1. **Save data.** The run is stored in its **own file, `run.json`** (absent = no saved run), not in `save.json`: it is rewritten every ~10 s, and a torn write there must never be able to wipe permanent progress. `save.json` is not touched by run saves and its schema does not change. `Save.reset()` clears the run.
 2. **Round trip.** Snapshot a world, restore it into a fresh world: every field under "What a snapshot contains" is equal (HP exactly, including fractional values; clamped to `[1, maxhp]`).
 3. **Determinism.** Restoring the RNG states and spawner timers makes the next N spawns identical to a run that never paused.
 4. **Autosave triggers.** The run is written: every 10 s of unpaused play, on entering pause, on QUIT TO MENU, on `love.focus(false)`, and on `love.quit`. Never while `phase == "over"`, the player is dead, or `world.daily` is true.
@@ -56,7 +56,7 @@ Not saved: transient timers (`shieldT`, `invulnT`, `freezeT`, flashes), cooldown
 7. **Overwrite guard.** With a save present, LAUNCH and DAILY RUN (either starts a new run) need a confirming second press (the row reads "ABANDON SAVE? TAP AGAIN", shortened to fit the row) before they start a new run and discard the save. Navigating away cancels the confirmation.
 8. **Countdown.** After a saved run is restored, **and after pause's RESUME**, a translucent `countdown` state shows **3, 2, 1** at 1 s each (about 3 s total), then control returns. During it: the world does not update (nothing moves, no damage, no spawns, no timers advance), the HUD is visible, and touch/keys do not steer. The steering input is reset on exit (`game:resume` already does this) so a finger already down does not cause a jump.
 9. **Quit to menu.** In standard and Black Hole runs, pause's QUIT TO MENU saves, then goes to the menu, and its label reads `SAVE & QUIT`. In a Daily run it keeps the label `QUIT TO MENU` and discards the run as today.
-10. **Corrupt or stale data is harmless.** Wrong types, missing fields, unknown weapon/passive ids, or an unknown ship id means the save is treated as absent: no CONTINUE row, no crash, no partial restore.
+10. **Corrupt or stale data is harmless.** Wrong types, missing fields, unknown weapon/passive ids, an unknown ship id, **or numbers that could make the game loop for ages (a spawner timer outside (0, wave interval], more timer entries than the zone has waves, more pending level-ups than the level)** means the save is treated as absent: no CONTINUE row, no crash, no partial restore. A corrupt `run.json` can never affect `save.json`.
 11. **No behaviour change to normal runs.** A run that is never resumed plays and scores exactly as before. Autopilot and `--smoke` runs never write a run save.
 12. **Stats stay honest.** Resuming does not count as a new run: `totalRuns` and stardust change only when the run actually ends (`Progress.endRun`, still called exactly once).
 
@@ -74,7 +74,7 @@ Build .love:       pwsh build/make-love.ps1
 
 ```
 src/meta/runsave.lua       -> NEW: snapshot(world), validate(run), restore params; pure, headless-safe
-src/meta/save.lua          -> add run default (nil), Save.setRun / Save.clearRun helpers
+src/meta/save.lua          -> run.json: Save.run / rawRun / setRun / clearRun (save.json untouched)
 src/core/rng.lua           -> add RNG:getState() / RNG:setState(s)
 src/states/countdown.lua   -> NEW: translucent 3-2-1 overlay state
 src/states/game.lua        -> enter(params.resume), autosave timer, clear on death/win
@@ -122,7 +122,7 @@ end
   - snapshot -> JSON encode -> decode -> restore round trip (criterion 2), covering HP fractions and each phase row of the table above.
   - RNG `getState`/`setState`: restoring yields the same next 100 draws (criterion 3).
   - `validate` rejects each malformed case in criterion 10, one test per case.
-  - `Save.reset()` clears `run`; an old save with no `run` key loads cleanly.
+  - `Save.reset()` clears the run; a missing, corrupt or non-table `run.json` is "no run" and leaves `save.json` intact; autosave writes only `run.json`.
   - Clearing: `player_died` clears; QUIT TO MENU does not (stub `Save`).
 - **Countdown:** drive `countdown:update(dt)` with fixed steps. Assert it ends after 3.0 s +/- one step, shows 3 then 2 then 1, pops exactly once, and never calls the game's update.
 - **Regression:** existing `test_save`, `test_spawner`, `test_zones`, `test_damage`, `test_leveling` unchanged and passing.
@@ -142,7 +142,7 @@ end
   - Keep restore code on the same path as a normal run start (`game:enter`), so a resumed run cannot diverge from a fresh one.
   - Keep `Progress.endRun` called exactly once per run.
 - **Ask first:**
-  - Bumping `CURRENT_VERSION` or changing the existing `save.json` schema beyond adding `run`.
+  - Bumping `CURRENT_VERSION` or changing the existing `save.json` schema (the run lives in `run.json`).
   - Saving entities (enemies, bullets, boss) or boss HP, which is the "Full snapshot" option we declined.
   - Adding multiple save slots, cloud save, or any new dependency.
   - Changing `main.lua`'s timestep or the state machine in `core/state.lua`.
@@ -163,6 +163,14 @@ end
 ## Open Questions
 
 None. The four earlier questions are resolved (see the Decisions table).
+
+## Changes after code review
+
+The first implementation stored the run as a `run` key inside `save.json`. Review found two problems, both fixed:
+- **Required:** a hand-edited or corrupt saved spawner timer (e.g. `-1e9`) passed validation and would have made `Spawner.update` spawn for ~666 million iterations on resume; `pendingLevelUps = 1e9` likewise. Validation now bounds both (criterion 10).
+- **Required:** autosave rewrote the whole `save.json` (all permanent progress) every 10 s and on backgrounding, so a torn write on a killed Android process could have reset stardust and unlocks. The run now lives in its own `run.json` (criterion 1).
+Also: weapon/passive caps are exported from `systems/leveling.lua` instead of duplicated, the menu no longer rebuilds its rows once per row per frame, and the test suite no longer touches the player's real save files under LÖVE.
+Left as is on purpose: after the final boss dies there are 2.5 s of warp before `endRun` clears the save, so killing the app in that window offers CONTINUE at the final boss. Clearing earlier would instead forfeit the win and its stardust.
 
 ## Next Step
 
