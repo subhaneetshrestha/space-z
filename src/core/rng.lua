@@ -32,6 +32,20 @@ function M.new(seed)
   return r
 end
 
+-- Save/restore a stream mid-run (run saves). The state is one plain integer.
+function RNG:getState()
+  return self._s
+end
+
+-- Returns false and leaves the stream untouched unless s is an integer in [1, MOD-1].
+function RNG:setState(s)
+  if type(s) ~= "number" or s ~= s or s < 1 or s >= MOD or s ~= floor(s) then
+    return false
+  end
+  self._s = s
+  return true
+end
+
 -- random() -> [0,1) float; random(n) -> integer 1..n; random(a, b) -> integer a..b.
 function RNG:random(a, b)
   local f = nextFloat(self)
