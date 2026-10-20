@@ -210,9 +210,39 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need the tag and commit history to build the changelog
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      # Changelog = every commit on main since the previous release tag, one bullet
+      # per commit (merge commits skipped; squash/PR titles and direct commits show).
+      - name: Build changelog
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          prev=$(git tag -l --sort=-v:refname \
+                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$TAG" | head -n 1 || true)
+
+          if [[ -n "$prev" ]]; then
+            range="$prev..$GITHUB_SHA"
+            heading="Changes since $prev"
+          else
+            range="$GITHUB_SHA"
+            heading="Changes"
+          fi
+
+          {
+            echo "## $heading"
+            echo
+            git log --no-merges --pretty='- %s (%h)' "$range" | head -n 100
+          } > CHANGELOG.md
+          cat CHANGELOG.md
 
       # gh creates the tag at --target when it does not exist yet, so pushes to
       # main need no separate tagging step. Re-runs re-upload into the same release.
@@ -227,12 +257,13 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG exists -> replacing assets"
             gh release upload "$TAG" artifacts/*/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file CHANGELOG.md
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Space Z $TAG" \
-              --generate-notes \
+              --notes-file CHANGELOG.md \
               artifacts/*/*
           fi
 
