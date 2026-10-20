@@ -156,6 +156,159 @@ test("player_death_clears_the_save", function(t)
   t.eq(Save.run(), nil)
 end)
 
+-- ------------------------------------------------- no way out of an attack (the point)
+-- Saving and continuing used to clear the field. These go through the real flow a
+-- player would use: Esc, SAVE & QUIT, then CONTINUE (the menu does exactly this switch).
+
+local Spawner = require("src.systems.spawner")
+
+-- Esc, SAVE & QUIT, then what the menu's CONTINUE row does; returns the resumed world
+local function pauseQuitContinue()
+  StateM.keypressed("escape")
+  H.Pause.selected = 2
+  StateM.keypressed("return")
+  local run = Save.run()
+  StateM.switch("game", { resume = run, mode = run.mode, seed = run.seed })
+  return H.Game.world
+end
+
+-- the countdown, played out through the real state stack
+local function throughTheCountdown()
+  local n = 0
+  while StateM.current() == H.Countdown and n < 600 do step(); n = n + 1 end
+end
+
+test("an_enemy_bullet_one_frame_from_the_ship_still_lands_after_save_quit_and_continue", function(t)
+  local w = start({ seed = 12 })
+  w.player.invulnT = 0
+  local hp = w.player.hp
+  local b = w.pools.ebullets:acquire()
+  b.kind, b.x, b.y, b.vx, b.vy, b.r = "ebullet", w.player.x, w.player.y - 16, 0, 300, 6
+  b.sprite, b.rot, b.scale, b.t, b.dead, b.damage, b.life = "bullet_enemy", 0, 1, 0, false, 9, 5
+  w.ebullets[#w.ebullets + 1] = b
+
+  local w2 = pauseQuitContinue()
+  t.eq(#w2.ebullets, 1, "the bullet came along")
+  throughTheCountdown()
+  t.eq(StateM.current(), H.Game, "control is back")
+  t.eq(w2.player.hp, hp, "nothing happened during the 3-2-1")
+  step(2)
+  t.eq(w2.player.hp, hp - 9, "and the hit lands on the first frames after it: the save was no escape")
+end)
+
+test("the_whole_field_is_frozen_during_the_countdown", function(t)
+  local w = start({ seed = 14 })
+  for i = 1, #w.weapons do w.weapons[i].cooldown = 3000 end
+  for i, id in ipairs({ "drifter", "sentry", "stinger", "lunar_hopper", "meteor" }) do
+    Spawner.spawnEnemy(w, id, 60 + i * 70, 90 + i * 15)
+  end
+  seconds(6)
+  t.ok(#w.enemies >= 5 and #w.ebullets > 0, "fixture: enemies and enemy bullets on screen")
+
+  Save.data().tutorialDone = true
+  H.Game.saveRun()
+  local run = Save.run()
+  StateM.switch("game", { resume = run, mode = run.mode, seed = run.seed })
+  local w2 = H.Game.world
+  local before = Support.worldView(w2)
+  seconds(2.8)
+  t.eq(StateM.current(), H.Countdown, "still counting")
+  t.eq(Support.firstDiff(Support.worldView(w2), before), nil,
+    "nothing moved, spawned, fired or ticked while the 3-2-1 ran")
+  throughTheCountdown()
+  step(30)
+  t.ok(Support.firstDiff(Support.worldView(w2), before) ~= nil, "and then the run goes on")
+end)
+
+test("steering_is_reset_when_the_countdown_hands_control_back", function(t)
+  -- a finger down when the pause opens never reports its release to the game (the pause
+  -- is on top), so its latch must be dropped on the way back or the ship would jump
+  start({ seed = 15 })
+  local input = H.Game.input
+  local resets = 0
+  local original = input.reset
+  input.reset = function(self, ...)
+    resets = resets + 1
+    return original(self, ...)
+  end
+  StateM.touchpressed(1, 240, 600)
+  StateM.keypressed("escape")   -- pause
+  StateM.keypressed("escape")   -- RESUME: through the 3-2-1
+  t.eq(StateM.current(), H.Countdown)
+  local before = resets
+  throughTheCountdown()
+  t.eq(StateM.current(), H.Game)
+  t.ok(resets > before, "game:resume ran as the countdown ended and cleared the steering")
+end)
+
+test("a_resume_from_a_save_starts_with_fresh_steering", function(t)
+  local w = start({ seed = 16 })
+  StateM.touchpressed(1, 240, 600)
+  local old = H.Game.input
+  pauseQuitContinue()
+  t.ok(H.Game.input ~= old, "the resumed run has its own input state, no latched finger from before")
+end)
+
+test("a_boss_wall_row_one_frame_from_the_ship_still_hits_after_a_resume", function(t)
+  local w = H.bossFight(6) -- the Ring Guardian: rows of ice with gaps
+  local wall
+  H.stepUntil(function()
+    for i = 1, #w.ebullets do
+      if w.ebullets[i].vx == 0 and w.ebullets[i].vy >= 140 and w.ebullets[i].y > 40 then
+        wall = w.ebullets[i]
+        return true
+      end
+    end
+  end, 3000)
+  t.ok(wall, "fixture: a wall of ice is falling")
+  -- put the ship just below that block: it touches on the next frames
+  w.player.invulnT = 0
+  w.player.x, w.player.y = wall.x, wall.y + 16
+  local hp = w.player.hp
+  local damage = wall.damage
+
+  local w2 = pauseQuitContinue()
+  throughTheCountdown()
+  step(3)
+  t.eq(w2.player.hp, hp - damage, "the block lands: quitting did not clear the wall")
+end)
+
+test("a_boss_dash_across_the_ship_still_connects_after_a_resume", function(t)
+  local w = H.bossFight(5) -- the Great Storm dashes across the sky
+  t.ok(H.stepUntil(function() return w.boss.state == "dash" end, 3600), "fixture: the boss is dashing")
+  w.player.invulnT = 0
+  local b = w.boss
+  w.player.x, w.player.y = (b.x + b.dashX) / 2, b.y -- in the middle of its path
+  local run = RunSave.snapshot(w)
+  t.ok(run, "fixture: saveable")
+  local hp = w.player.hp
+
+  local twin = H.resumeTwin(json.decode(json.encode(run)))
+  for _ = 1, 40 do
+    H.Game:update(STEP)
+    twin:update(STEP)
+  end
+  t.ok(w.player.hp < hp, "fixture: the dash hit the ship in the original")
+  t.eq(twin.world.player.hp, w.player.hp, "and the resumed copy took exactly the same damage")
+  t.eq(Support.worldDiff(w, twin.world), nil)
+end)
+
+test("a_resumed_run_autosaves_run_json_and_never_touches_save_json", function(t)
+  local w = H.played()
+  Save.data().tutorialDone = true
+  H.Game.saveRun()
+  local run = Save.run()
+  Support.withMemoryFs(function(fs)
+    StateM.switch("game", { resume = run, mode = run.mode, seed = run.seed })
+    throughTheCountdown()
+    seconds(25) -- two autosaves
+    t.ok(#fs.writes >= 2, "autosaved while playing")
+    for _, name in ipairs(fs.writes) do
+      t.eq(name, "run.json", "only the run is rewritten, never the permanent progress")
+    end
+  end)
+end)
+
 test("a_win_clears_the_save_and_counts_the_run_once", function(t)
   local w = played()
   H.Game.saveRun()

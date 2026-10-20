@@ -119,7 +119,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/meta/runsave.lua`, `src/meta/runsave_entities.lua`, `tests/test_runsave_fuzz.lua` (new), `tests/run.lua`, `docs/enemy-state-save/measurements.md` (new)
   - Scope: M
 
-- [ ] **A7: Game integration and the no-dodge test**
+- [x] **A7: Game integration and the no-dodge test** (685/0 headless and on LÖVE 12; smoke OK in 33 s and, with `--test`, left the `run.json` in the save folder untouched. No source change was needed: the earlier tasks had already wired `game:enter`, so this task is the proof through the real flows: Esc, SAVE & QUIT, CONTINUE for a bullet one frame away, a boss wall row and a boss dash; the whole field frozen through the countdown; pause then RESUME changing nothing; steering reset on the way back; a resumed run autosaving only `run.json`; the boss fight, the warp and the last warp saved from the pause menu and from focus loss and quit. Controls: bullets not restored, no countdown, no steering reset, autosave also writing `save.json`, a lost boss dash target, the old "no save in the last warp" rule and a pause that does not save each fail the suite. A real version 1 `run.json` from the player's save folder validates under the new code. **Not done here, needs a person:** the manual desktop and Android checks from `SPEC.md` (they are in V1).)
   - Description: `game:enter` rebuilds the lists and `world.boss` through `RunSave.apply`, then pushes `countdown`. Verify the whole path through the real game state: Esc, SAVE & QUIT, CONTINUE with entities on screen.
   - Acceptance:
     - [ ] Criterion 3: a bullet one frame from the player at save time hits on the first unfrozen frame; the same for a boss dash and a boss wall.
