@@ -56,6 +56,17 @@ function T.the_run_survives_a_reload_from_disk(t)
   end)
 end
 
+function T.load_rereads_run_json_instead_of_trusting_the_cache(t)
+  Support.withMemoryFs(function(fs)
+    Save.reset()
+    Save.setRun(validRun())
+    t.ok(Save.run(), "fixture: run cached")
+    fs.files["run.json"] = nil -- deleted behind the game's back
+    Save.load()
+    t.eq(Save.run(), nil, "a reload sees the file as it is on disk")
+  end)
+end
+
 function T.a_corrupt_run_file_never_affects_the_meta_save(t)
   Support.withMemoryFs(function(fs)
     fs.files["save.json"] = '{"stardust":123,"totalRuns":4}'

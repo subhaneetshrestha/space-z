@@ -36,9 +36,10 @@ function M.rows(self)
   return list
 end
 
--- What a row shows: its name, or the abandon prompt while it is armed.
-function M.label(self, i)
-  local label = M.rows(self)[i]
+-- What a row shows: its name, or the abandon prompt while it is armed. Pass the
+-- current `list` when it is already built (draw does) to avoid rebuilding it.
+function M.label(self, i, list)
+  local label = (list or M.rows(self))[i]
   if label and label == self.armed then return ABANDON_LABEL end
   return label
 end
@@ -177,7 +178,7 @@ function M:draw()
     lg.setColor(cr, cg, cb, sel and 0.55 or 0.15)
     lg.rectangle("line", x, y, w, h, 6, 6)
     lg.setColor(1, 1, 1, sel and 0.95 or 0.6)
-    lg.printf(M.label(self, i), x, y + h * 0.5 - 9, w, "center")
+    lg.printf(M.label(self, i, list), x, y + h * 0.5 - 9, w, "center")
   end
 
   -- footer toggles

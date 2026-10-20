@@ -28,6 +28,45 @@ function M.firstDiff(a, b, path)
   return nil
 end
 
+function M.noop() end
+
+-- A table whose every missing key is a no-op function (stands in for a render or
+-- audio module that needs a window / sound device).
+function M.catchAll()
+  return setmetatable({}, { __index = function() return M.noop end })
+end
+
+-- Load a private copy of `moduleName` with the modules in `stubs` (name -> table,
+-- or true for a catch-all) replaced, then restore the real ones so other test
+-- files are unaffected. Returns the loaded module.
+function M.loadWithStubs(moduleName, stubs)
+  local saved = {}
+  for name in pairs(stubs) do saved[name] = package.loaded[name] end
+  for name, stub in pairs(stubs) do
+    package.loaded[name] = stub == true and M.catchAll() or stub
+  end
+  package.loaded[moduleName] = nil
+  local ok, mod = pcall(require, moduleName)
+  for name in pairs(stubs) do package.loaded[name] = saved[name] end
+  package.loaded[moduleName] = nil
+  if not ok then error(mod, 0) end
+  return mod
+end
+
+-- Returns test(name, fn): registers T[name] so that setup() runs first and
+-- teardown() ALWAYS runs afterwards, even when the test body fails; a failing
+-- test therefore cannot leak stubs or registered states into later tests.
+function M.guarded(T, setup, teardown)
+  return function(name, fn)
+    T[name] = function(t)
+      setup()
+      local ok, err = pcall(fn, t)
+      teardown()
+      if not ok then error(err, 0) end
+    end
+  end
+end
+
 -- In-memory stand-in for love.filesystem: read / write / remove over a table, with
 -- a log of written names. Lets tests exercise Save's real file code path without
 -- touching the player's actual save files.
