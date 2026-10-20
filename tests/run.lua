@@ -37,6 +37,7 @@ local FILES = {
   "tests.test_leveling",
   "tests.test_pickups",
   "tests.test_spawner",
+  "tests.test_boss",
   "tests.test_zones",
   "tests.test_evolutions",
   "tests.test_effects",

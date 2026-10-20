@@ -77,6 +77,7 @@ function M.spawn(world, bossId)
   e.rot = 0
   e.scale = def.scale or 1
   e.t = 0
+  e.bt = 0 -- behavior clock: starts at arrival so sin() positions begin at 0
   e.dead = false
   e.maxhp = def.hp
   e.hp = def.hp
@@ -103,7 +104,7 @@ behaviors.kessler = {
   end,
   update = function(world, e, dt, phase2)
     e.rot = e.rot + (phase2 and 0.6 or 0.35) * dt
-    e.x = VW * 0.5 + sin(e.t * (phase2 and 1.1 or 0.7)) * (VW * 0.5 - 90)
+    e.x = VW * 0.5 + sin(e.bt * (phase2 and 1.1 or 0.7)) * (VW * 0.5 - 90)
 
     e.burstT = e.burstT - dt
     if e.burstT <= 0 then
@@ -139,8 +140,8 @@ behaviors.leviathan = {
     e.stateT = e.stateT - dt
 
     if e.state == "hover" then
-      e.x = VW * 0.5 + sin(e.t * 0.8) * 130
-      e.y = 170 + sin(e.t * 2.1) * 8
+      e.x = VW * 0.5 + sin(e.bt * 0.8) * 130
+      e.y = 170 + sin(e.bt * 2.1) * 8
       e.meteorT = e.meteorT - dt
       if e.meteorT <= 0 then
         e.meteorT = e.meteorT + (phase2 and 1.5 or 2.2)
@@ -190,7 +191,7 @@ behaviors.warmachine = {
     e.shotT, e.spiralA, e.fanShots = 0, 0, 0
   end,
   update = function(world, e, dt, phase2)
-    e.x = VW * 0.5 + sin(e.t * 0.9) * 120
+    e.x = VW * 0.5 + sin(e.bt * 0.9) * 120
     e.stateT = e.stateT - dt
     e.shotT = e.shotT - dt
 
@@ -229,7 +230,7 @@ behaviors.titan = {
   end,
   update = function(world, e, dt, phase2)
     e.rot = e.rot + (phase2 and 0.9 or 0.4) * dt
-    e.x = VW * 0.5 + sin(e.t * 0.55) * 150
+    e.x = VW * 0.5 + sin(e.bt * 0.55) * 150
 
     e.burstT = e.burstT - dt
     if e.burstT <= 0 then
@@ -255,7 +256,7 @@ behaviors.storm = {
     e.dashes = 0
   end,
   update = function(world, e, dt, phase2)
-    e.y = 180 + sin(e.t * 1.6) * 22
+    e.y = 180 + sin(e.bt * 1.6) * 22
     e.stateT = e.stateT - dt
 
     if e.state == "drift" then
@@ -303,7 +304,7 @@ behaviors.guardian = {
     e.wallT, e.fanT, e.wallFlip = 2.2, 1.5, false
   end,
   update = function(world, e, dt, phase2)
-    e.x = VW * 0.5 + sin(e.t * 0.5) * 170
+    e.x = VW * 0.5 + sin(e.bt * 0.5) * 170
 
     e.wallT = e.wallT - dt
     if e.wallT <= 0 then
@@ -340,8 +341,8 @@ behaviors.overlord = {
   end,
   update = function(world, e, dt, phase2)
     local third = e.hp / e.maxhp
-    e.x = VW * 0.5 + sin(e.t * (third < 1 / 3 and 1.0 or 0.6)) * 140
-    e.rot = sin(e.t * 0.8) * 0.15
+    e.x = VW * 0.5 + sin(e.bt * (third < 1 / 3 and 1.0 or 0.6)) * 140
+    e.rot = sin(e.bt * 0.8) * 0.15
 
     if third > 2 / 3 then
       e.fanT = e.fanT - dt
@@ -417,11 +418,13 @@ function M.update(world, dt)
     if e.y >= b.arenaY then
       e.y = b.arenaY
       e.entering = false
+      e.bt = 0
       b.init(e)
     end
     return
   end
 
+  e.bt = e.bt + dt
   local phase2 = e.hp < e.maxhp * 0.5
   if phase2 and e.bossPhase == 1 then e.bossPhase = 2 end
   b.update(world, e, dt, phase2)
