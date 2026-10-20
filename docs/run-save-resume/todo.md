@@ -78,7 +78,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Files: `src/states/game.lua`, `tests/test_runsave.lua` (Game-free assertions only)
   - Scope: M (2 files)
 
-- [ ] **Task 6: Pause SAVE & QUIT**
+- [x] **Task 6: Pause SAVE & QUIT** (pause is opened with `{ save, daily }` params from the game state so it never requires the game module)
   - Description: On pause `enter`, call `Game.saveRun()`. Row 2 reads `SAVE & QUIT` for standard/Black Hole and saves then switches to the menu. For daily runs it stays `QUIT TO MENU` and discards.
   - Acceptance:
     - [ ] Standard/Black Hole: quitting keeps the run; menu shows CONTINUE (after Task 7).

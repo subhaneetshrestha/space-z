@@ -45,7 +45,7 @@ local function loadGame()
   return Game
 end
 
-local Game, Countdown
+local Game, Countdown, Pause
 local gameoverParams
 local hadLove
 
@@ -56,9 +56,11 @@ local function setup()
   end
   Game = Game or loadGame()
   Countdown = require("src.states.countdown")
+  Pause = require("src.states.pause")
   while StateM.current() do StateM.pop() end
   StateM.register("game", Game)
   StateM.register("countdown", Countdown)
+  StateM.register("pause", Pause)
   StateM.register("levelup", { translucent = true })
   StateM.register("gameover", { enter = function(_, p) gameoverParams = p end })
   StateM.register("menu", {})
@@ -235,6 +237,75 @@ function T.saverun_skips_autopilot_runs_even_through_autosave(t)
   seconds(25)
   t.eq(Game.saveRun(), false)
   t.eq(Save.run(), nil, "smoke runs write no run")
+  teardown()
+end
+
+-- -------------------------------------------------------------------- pause
+
+local function pauseTop()
+  local top = StateM.current()
+  return top and top.__name
+end
+
+function T.opening_pause_saves_the_run(t)
+  setup()
+  played()
+  StateM.keypressed("escape")
+  t.eq(pauseTop(), "pause")
+  local run = Save.run()
+  t.ok(run, "a save exists as soon as the pause menu is up")
+  t.eq(run.hp, 37.5)
+  teardown()
+end
+
+function T.pause_offers_save_and_quit_for_standard_and_blackhole(t)
+  setup()
+  start({ mode = "standard" })
+  StateM.keypressed("escape")
+  t.eq(Pause.rows[1], "RESUME")
+  t.eq(Pause.rows[2], "SAVE & QUIT")
+  StateM.pop() -- close pause
+
+  start({ mode = "blackhole" })
+  StateM.keypressed("escape")
+  t.eq(Pause.rows[2], "SAVE & QUIT")
+  teardown()
+end
+
+function T.save_and_quit_keeps_the_run_and_goes_to_the_menu(t)
+  setup()
+  played()
+  StateM.keypressed("escape")
+  Save.clearRun() -- prove the quit itself writes, not just the pause entry
+  Pause.selected = 2
+  StateM.keypressed("return")
+  t.eq(pauseTop(), "menu")
+  local run = Save.run()
+  t.ok(run, "the run survives quitting to the menu")
+  t.eq(run.hp, 37.5)
+  t.eq(run.level, 6)
+  teardown()
+end
+
+function T.daily_runs_keep_quit_to_menu_and_leave_no_save(t)
+  setup()
+  start({ daily = true, mode = "standard" })
+  seconds(12)
+  StateM.keypressed("escape")
+  t.eq(Pause.rows[2], "QUIT TO MENU")
+  t.eq(Save.run(), nil, "opening pause saves nothing for a daily run")
+  Pause.selected = 2
+  StateM.keypressed("return")
+  t.eq(pauseTop(), "menu")
+  t.eq(Save.run(), nil, "and quitting discards it, as before")
+  teardown()
+end
+
+function T.pause_without_a_game_still_works_for_resume(t)
+  setup()
+  StateM.switch("menu")
+  StateM.push("pause") -- no params: no save callback, default labels
+  t.eq(Pause.rows[2], "SAVE & QUIT")
   teardown()
 end
 

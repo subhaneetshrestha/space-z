@@ -686,7 +686,7 @@ end
 
 function M:keypressed(key)
   if key == "escape" and self.world.phase ~= "over" then
-    StateM.push("pause")
+    StateM.push("pause", { save = M.saveRun, daily = self.world.daily })
   end
 end
 
