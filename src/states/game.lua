@@ -283,7 +283,15 @@ function M:enter(params)
   wireEvents(self, world)
   Achievements.live(world)
   Audio.load()
-  Music.play("zone", world.zoneIndex)
+  -- a resumed run picks its music up where it stood: the boss theme during a boss
+  -- fight, none during the warp after one (it stops when the boss dies), else the zone's
+  if world.phase == "boss" then
+    Music.play("boss", world.zoneIndex)
+  elseif world.phase == "warp" then
+    Music.stop()
+  else
+    Music.play("zone", world.zoneIndex)
+  end
 
   -- the world is frozen behind a 3-2-1 until the player is ready
   if resume then StateM.push("countdown") end

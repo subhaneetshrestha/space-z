@@ -15,13 +15,22 @@ local H = {}
 local STEP = 1 / 60
 H.STEP = STEP
 
+-- Music has no sound device here, but a test can still ask what the game told it to
+-- do: H.music is the list of { "play", key, zone } / { "stop" } calls since setup().
+H.music = {}
+local musicStub = setmetatable({}, {
+  __index = function(_, name)
+    return function(...) H.music[#H.music + 1] = { name, ... } end
+  end,
+})
+
 local STUBS = {
   ["src.render.sprites"] = { batch = function() return Support.catchAll() end, add = Support.noop },
   ["src.render.starfield"] = { new = function() return Support.catchAll() end },
   ["src.render.particles"] = true,
   ["src.render.hud"] = true,
   ["src.audio.audio"] = true,
-  ["src.audio.music"] = true,
+  ["src.audio.music"] = musicStub,
 }
 
 local gameoverParams
@@ -45,6 +54,7 @@ function H.setup()
   StateM.register("gameover", { enter = function(_, p) gameoverParams = p end })
   StateM.register("menu", {})
   gameoverParams = nil
+  H.music = {}
   Save.reset()
 end
 

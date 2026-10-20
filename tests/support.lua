@@ -224,7 +224,7 @@ end
 -- cooldowns, and an empty field.
 function M.validRun2(over)
   local run = M.validRun({
-    version = 2,
+    version = 2, phase = "waves", warpT = 0,
     player = { x = 240, y = 518, vx = 0, vy = 0, invulnT = 0 },
     timers = { freezeT = 0, shieldT = 0, pulseT = 0, hpRingT = 0 },
     weapons = { { id = "blaster", level = 2, cooldown = 0.15 } },

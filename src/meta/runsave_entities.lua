@@ -12,6 +12,7 @@
 -- index nil on the first frame after the resume, so it rejects the whole save.
 local Viewport = require("src.core.viewport")
 local Enemies = require("src.content.enemies")
+local Bosses = require("src.content.bosses")
 local Weapons = require("src.content.weapons")
 local Pickups = require("src.systems.pickups")
 local WeaponSystem = require("src.systems.weapons")
@@ -79,16 +80,81 @@ function M.unclassifiedEnemyKeys(e)
   return out
 end
 
+-- ------------------------------------------------------------------- bosses
+-- A boss is an enemy in the same list, with a `boss` id where an enemy has `def`.
+-- (boss.lua) It has the common fields below, plus what its pattern grows. A pattern
+-- sets its fields in an init that runs when the entrance ends, so an entering boss has
+-- none of them and a finished one has all of them.
+
+local BOSS_FIELDS = set({
+  "x", "y", "vx", "vy", "r", "rot", "scale", "t", "bt", "hp", "maxhp",
+  "touchDamage", "xp", "elite", "flashT", "entering", "bossPhase",
+})
+-- On a live boss but not saved: the def is saved as an id, the sprite is the def's
+local BOSS_DERIVED = set({ "kind", "isBoss", "bossDef", "sprite", "dead" })
+
+-- how a pattern field is checked: { lo, hi } a number, { lo, hi, int = true } an
+-- integer, { enum = set } a state name, "bool"
+local TIMER = { -30, 120 } -- stateT runs below zero while a state that never reads it plays
+local SCREEN_X = { -300, VW + 300 }
+local ANGLE = { -1e7, 1e7 } -- spiral angles only ever grow
+local OFFSET = { -2000, 2000 }
+
+local BOSS_PATTERNS = {
+  kessler = { burstT = TIMER, fanT = TIMER, addT = TIMER },
+  leviathan = {
+    state = { enum = set({ "hover", "telegraph", "dive", "rise" }) },
+    stateT = TIMER, meteorT = TIMER, baseX = SCREEN_X,
+    hoverOffX = OFFSET, hoverOffY = OFFSET, hoverT = { 0, 1e7 },
+    diveX = SCREEN_X,
+  },
+  warmachine = {
+    state = { enum = set({ "fans", "spiral" }) },
+    stateT = TIMER, shotT = TIMER, spiralA = ANGLE, fanShots = { 0, 100, int = true },
+  },
+  titan = { burstT = TIMER, addT = TIMER },
+  storm = {
+    state = { enum = set({ "drift", "telegraph", "dash", "pulse" }) },
+    stateT = TIMER, dashes = { 0, 1e7, int = true }, dashX = SCREEN_X,
+  },
+  guardian = { wallT = TIMER, fanT = TIMER, wallFlip = "bool" },
+  overlord = {
+    fanT = TIMER, spiralT = TIMER, spiralA = ANGLE, radialT = TIMER, addT = TIMER, wallT = TIMER,
+  },
+}
+-- set when a state first needs them, and left behind after: absent until then
+local PATTERN_OPTIONAL = { leviathan = set({ "diveX" }), storm = set({ "dashX" }) }
+-- states that read an optional field the moment they run
+local STATE_NEEDS = {
+  leviathan = { telegraph = "diveX", dive = "diveX" },
+  storm = { telegraph = "dashX", dash = "dashX" },
+}
+
+-- Keys of a live boss that are neither saved, derived, nor its own pattern's.
+function M.unclassifiedBossKeys(e)
+  local pattern = e.bossDef and BOSS_PATTERNS[e.bossDef.behavior] or {}
+  local out = {}
+  for k in pairs(e) do
+    if not BOSS_FIELDS[k] and not BOSS_DERIVED[k] and not pattern[k] then out[#out + 1] = k end
+  end
+  return out
+end
+
 -- Entities are saved in list order: collision stops at the first hit in list order,
--- and Pool.sweep swap-removes, so the order is part of the state. A boss (no def) is
--- not captured here; until bosses are saved the snapshot only calls this in waves.
+-- and Pool.sweep swap-removes, so the order is part of the state.
 -- Returns the entries and a map enemy table -> slot, which is how other entities
--- (a homing missile's target) point at an enemy in the save.
+-- (a homing missile's target, world.boss) point at an enemy in the save.
 function M.captureEnemies(list)
   local out, slotOf = {}, {}
   for i = 1, #list do
     local e = list[i]
-    if not e.dead and e.def then
+    if not e.dead and e.bossDef then
+      local s = { boss = e.bossDef.id }
+      for k in pairs(BOSS_FIELDS) do s[k] = e[k] end
+      for k in pairs(BOSS_PATTERNS[e.bossDef.behavior]) do s[k] = e[k] end
+      out[#out + 1] = s
+      slotOf[e] = #out
+    elseif not e.dead and e.def then
       local s = { def = e.def.id }
       for k in pairs(ENEMY_SAVED) do s[k] = e[k] end
       out[#out + 1] = s
@@ -107,13 +173,22 @@ function M.restoreEnemies(world, entries)
   end
   for i = 1, #entries do
     local s = entries[i]
-    local def = Enemies[s.def]
     local e = pool:acquire()
     e.kind = "enemy"
-    e.def = def
-    e.sprite = def.sprite
     e.dead = false
-    for k in pairs(ENEMY_SAVED) do e[k] = s[k] end
+    if s.boss then
+      local def = Bosses[s.boss]
+      e.isBoss = true
+      e.bossDef = def
+      e.sprite = def.sprite
+      for k in pairs(BOSS_FIELDS) do e[k] = s[k] end
+      for k in pairs(BOSS_PATTERNS[def.behavior]) do e[k] = s[k] end
+    else
+      local def = Enemies[s.def]
+      e.def = def
+      e.sprite = def.sprite
+      for k in pairs(ENEMY_SAVED) do e[k] = s[k] end
+    end
     list[i] = e
   end
 end
@@ -194,13 +269,82 @@ local function validEnemy(s)
   return true
 end
 
--- The saved `enemies` list of a version 2 run.
+local function fieldOk(spec, v)
+  if spec == "bool" then return type(v) == "boolean" end
+  if spec.enum then return type(v) == "string" and spec.enum[v] == true end
+  if spec.int and not (isNum(v) and v == math.floor(v)) then return false end
+  return inRange(v, spec[1], spec[2])
+end
+
+local BOSS_RANGE = {
+  x = SCREEN_X, y = { -300, VH + 300 }, vx = { -5000, 5000 }, vy = { -5000, 5000 },
+  r = { 0.1, 200 }, rot = { -1e4, 1e4 }, scale = { 0.1, 10 }, t = { 0, 1e7 }, bt = { 0, 1e7 },
+  touchDamage = { 0, 1e4 }, xp = { 0, 1e6 }, flashT = { 0, 10 },
+}
+
+local function validBoss(s)
+  local def = type(s.boss) == "string" and Bosses[s.boss]
+  local pattern = def and BOSS_PATTERNS[def.behavior]
+  if not pattern then return false end
+  for k in pairs(s) do
+    if k ~= "boss" and not BOSS_FIELDS[k] and not pattern[k] then return false end
+  end
+
+  for k, bounds in pairs(BOSS_RANGE) do
+    if not inRange(s[k], bounds[1], bounds[2]) then return false end
+  end
+  if s.elite ~= false or type(s.entering) ~= "boolean" then return false end
+  if s.bossPhase ~= 1 and s.bossPhase ~= 2 then return false end
+  if not (isNum(s.maxhp) and s.maxhp > 0 and s.maxhp <= 1e9) then return false end
+  if not (isNum(s.hp) and s.hp > 0 and s.hp <= s.maxhp * (1 + 1e-9)) then return false end
+
+  -- the pattern's init runs when the entrance ends: an entering boss has none of its
+  -- fields, a finished one has every one that init sets
+  local optional = PATTERN_OPTIONAL[def.behavior] or {}
+  for k, spec in pairs(pattern) do
+    local v = s[k]
+    if s.entering then
+      if v ~= nil then return false end
+    elseif v == nil then
+      if not optional[k] then return false end
+    elseif not fieldOk(spec, v) then
+      return false
+    end
+  end
+  local needs = STATE_NEEDS[def.behavior]
+  if needs and not s.entering and s[needs[s.state] or false] == nil and needs[s.state] then
+    return false
+  end
+  return true
+end
+
+-- The saved `enemies` list of a version 2 run: enemies and, in a boss fight, the boss.
 function M.validEnemies(list)
   if not isSequence(list) or #list > M.MAX_ENEMIES then return false end
   for i = 1, #list do
-    if not validEnemy(list[i]) then return false end
+    local s = list[i]
+    if type(s) ~= "table" then return false end
+    if s.boss ~= nil then
+      if not validBoss(s) then return false end
+    elseif not validEnemy(s) then
+      return false
+    end
   end
   return true
+end
+
+-- A boss is in the list exactly in the boss phase, once, as world.boss, and it is the
+-- boss of the run's zone. `slot` is the saved world.boss. Needs a validated list.
+function M.validBossLink(list, bossPhase, slot, zoneBossId)
+  local count, found = 0, nil
+  for i = 1, #list do
+    if list[i].boss ~= nil then
+      count = count + 1
+      found = i
+    end
+  end
+  if not bossPhase then return count == 0 and slot == nil end
+  return count == 1 and slot == found and list[found].boss == zoneBossId
 end
 
 -- ------------------------------------------------------------------ bullets

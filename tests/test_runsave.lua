@@ -10,6 +10,8 @@ local Upgrades = require("src.content.upgrades")
 local Zones = require("src.content.zones")
 local Leveling = require("src.systems.leveling")
 local Spawner = require("src.systems.spawner")
+local Boss = require("src.systems.boss")
+local Bosses = require("src.content.bosses")
 local Pool = require("src.core.pool")
 local Events = require("src.core.events")
 local Support = require("tests.support")
@@ -47,6 +49,9 @@ local function fakeWorld(over)
   for k, v in pairs(over or {}) do w[k] = v end
   return w
 end
+
+-- defined further down; the snapshot tests need them too
+local playedWorld, freshWorld
 
 local function roundTrip(run)
   return json.decode(json.encode(run))
@@ -145,32 +150,89 @@ function T.snapshot_blackhole_mode_kept(t)
   t.eq(RunSave.snapshot(fakeWorld({ mode = "blackhole" })).mode, "blackhole")
 end
 
-function T.snapshot_boss_phase_rewinds_to_boss_arrival(t)
-  local run = RunSave.snapshot(fakeWorld({
-    phase = "boss", zoneTime = Zones[2].duration + 30, boss = { hp = 5 },
-  }))
-  t.eq(run.zoneIndex, 2)
-  t.eq(run.zoneTime, Zones[2].duration, "field restarts empty at the boss trigger")
-  t.eq(run.zoneStartDistance, 9000.5)
-  t.eq(#run.spawnerTimers, 0)
+-- The boss and warp phases used to be rewound (boss: back to its arrival with full
+-- health and an empty field; warp: on to the next zone), which let a player escape any
+-- fight by saving. They are saved as they are now.
+
+-- the world in the boss fight of its zone: the boss in the enemy list, linked as
+-- world.boss, 12 s into the fight so its pattern has initialised
+local function indexOfBoss(w)
+  for i = 1, #w.enemies do
+    if w.enemies[i] == w.boss then return i end
+  end
 end
 
-function T.snapshot_warp_phase_resumes_at_next_zone_start(t)
-  local run = RunSave.snapshot(fakeWorld({
-    phase = "warp", bossKills = 2, distance = 20000.5,
-  }))
-  t.eq(run.zoneIndex, 3)
-  t.eq(run.zoneTime, 0)
-  t.eq(run.zoneStartDistance, 20000.5)
+local function inBossFight(w)
+  w.phase = "boss"
+  w.zoneTime = w.zone.duration + 12.5
+  w.pools = w.pools or {}
+  w.pools.enemies = w.pools.enemies or Pool.new()
+  w.enemies = w.enemies or {}
+  Boss.spawn(w, w.zone.boss)
+  for _ = 1, 60 * 12 do Boss.update(w, 1 / 60) end
+  return w
+end
+
+function T.snapshot_in_the_boss_phase_keeps_the_phase_and_the_clock(t)
+  local w = inBossFight(playedWorld(41))
+  local run = RunSave.snapshot(w)
+  t.eq(run.phase, "boss")
+  t.eq(run.zoneIndex, w.zoneIndex)
+  t.near(run.zoneTime, w.zoneTime, 1e-12, "no rewind to the boss's arrival")
+  t.eq(run.zoneStartDistance, w.zoneStartDistance)
+  t.eq(run.warpT, 0)
+end
+
+function T.snapshot_saves_the_boss_and_links_it(t)
+  local w = inBossFight(playedWorld(42))
+  w.boss.hp = 321.5
+  local run = RunSave.snapshot(w)
+  t.ok(run.boss, "world.boss is saved as a slot")
+  local s = run.enemies[run.boss]
+  t.eq(s.boss, w.zone.boss)
+  t.eq(s.def, nil, "a boss has a boss id, not an enemy def")
+  t.eq(s.hp, 321.5, "no heal back to full health")
+  t.eq(s.maxhp, w.boss.maxhp)
+  t.eq(s.entering, false)
+  t.eq(s.bt, w.boss.bt)
+end
+
+function T.snapshot_in_the_boss_phase_without_a_boss_is_nil(t)
+  local w = inBossFight(playedWorld(43))
+  w.boss.dead = true
+  w.boss = nil
+  t.eq(RunSave.snapshot(w), nil, "nothing a resume could rebuild the fight from")
+end
+
+function T.snapshot_in_the_warp_phase_keeps_the_warp(t)
+  local w = playedWorld(44)
+  w.phase, w.warpT, w.bossKills, w.zoneTime = "warp", 1.25, 2, w.zone.duration + 30
+  local run = RunSave.snapshot(w)
+  t.eq(run.phase, "warp")
+  t.eq(run.warpT, 1.25)
+  t.eq(run.zoneIndex, w.zoneIndex, "still the zone whose boss just died")
+  t.eq(run.zoneTime, w.zoneTime)
   t.eq(run.bossKills, 2, "the boss kill is kept")
-  t.eq(#run.spawnerTimers, 0)
+  t.eq(run.boss, nil)
 end
 
-function T.snapshot_warp_after_last_zone_is_nil(t)
+function T.snapshot_in_the_warp_after_the_last_boss_is_saved_too(t)
   local last = #Zones
-  t.eq(RunSave.snapshot(fakeWorld({
-    phase = "warp", zoneIndex = last, zone = Zones[last],
-  })), nil, "the run is already won")
+  local w = playedWorld(45)
+  w.zoneIndex, w.zone = last, Zones[last]
+  w.phase, w.warpT, w.zoneTime = "warp", 0.5, w.zone.duration + 40
+  w.spawnerState = { timers = {} }
+  local run = RunSave.snapshot(w)
+  t.ok(run, "resuming it plays out the win; it used to be refused")
+  t.eq(run.phase, "warp")
+  t.eq(RunSave.validate(roundTrip(run)), true)
+end
+
+function T.snapshot_of_a_waves_run_says_so(t)
+  local run = RunSave.snapshot(fakeWorld())
+  t.eq(run.phase, "waves")
+  t.eq(run.warpT, 0)
+  t.eq(run.boss, nil)
 end
 
 function T.snapshot_nil_when_run_is_over(t)
@@ -338,11 +400,11 @@ local REJECTS = {
   player_y_off_screen = function() local r = good(); r.player.y = 99999; return r end,
   player_vx_absurd = function() local r = good(); r.player.vx = 1e6; return r end,
   player_vy_infinite = function() local r = good(); r.player.vy = math.huge; return r end,
-  player_invuln_negative = function() local r = good(); r.player.invulnT = -1; return r end,
+  player_invuln_far_below_zero = function() local r = good(); r.player.invulnT = -5; return r end,
   player_invuln_nan = function() local r = good(); r.player.invulnT = NAN; return r end,
   timers_block_missing = function() local r = good(); r.timers = nil; return r end,
   timer_freeze_missing = function() local r = good(); r.timers.freezeT = nil; return r end,
-  timer_freeze_negative = function() local r = good(); r.timers.freezeT = -0.5; return r end,
+  timer_freeze_far_below_zero = function() local r = good(); r.timers.freezeT = -5; return r end,
   timer_shield_nan = function() local r = good(); r.timers.shieldT = NAN; return r end,
   timer_pulse_wrong_type = function() local r = good(); r.timers.pulseT = "1"; return r end,
   timer_hpring_infinite = function() local r = good(); r.timers.hpRingT = math.huge; return r end,
@@ -405,6 +467,16 @@ function T.validate_ignores_version_2_fields_on_a_version_1_save(t)
   t.eq(RunSave.validate(r), true)
 end
 
+-- The game counts these down only while they are above zero, so one that has just run
+-- out sits a fraction below zero until it is set again: normal play, not corruption.
+function T.validate_accepts_timers_that_have_just_run_out(t)
+  local r = good()
+  r.player.invulnT = -0.006
+  r.timers.freezeT, r.timers.shieldT = -0.016, -0.001
+  r.timers.pulseT, r.timers.hpRingT = -0.0004, -0.012
+  t.eq(RunSave.validate(r), true)
+end
+
 function T.validate_accepts_a_huge_invuln_timer(t)
   -- the test harness (and a debug build) hold i-frames at 1e9; only NaN/negative are corrupt
   local r = good()
@@ -426,7 +498,7 @@ end
 
 -- A brand-new run exactly as game:enter builds it (headless subset): starting
 -- weapon, computed stats, full hull, spawn-point player, empty field.
-local function freshWorld(seed, shipId)
+function freshWorld(seed, shipId)
   local ship = Ships[shipId or "pathfinder"]
   local world = {
     mode = "standard", seed = seed, daily = false,
@@ -466,7 +538,7 @@ local function simulate(world, seconds)
 end
 
 -- A run that has been played for a while: bigger build, damaged, 20 s into zone 1.
-local function playedWorld(seed)
+function playedWorld(seed)
   local w = freshWorld(seed, "aegis")
   Leveling.addWeapon(w, Weapons.missiles)
   w.weapons[2].level = 3
@@ -611,27 +683,49 @@ function T.apply_restores_evolved_weapons(t)
   t.eq(b.weapons[1].def, Weapons.plasma_storm)
 end
 
-function T.apply_boss_phase_save_resumes_in_waves_with_no_boss(t)
-  local a = playedWorld(14)
-  a.phase, a.zoneTime, a.boss = "boss", Zones[1].duration + 20, { hp = 3 }
+function T.apply_boss_phase_save_resumes_the_fight_with_the_same_boss(t)
+  local a = inBossFight(playedWorld(14))
+  a.boss.hp = 777.25
   local b = freshWorld(14)
+  t.eq(RunSave.apply(b, roundTrip(RunSave.snapshot(a))), true)
+  t.eq(b.phase, "boss")
+  t.near(b.zoneTime, a.zoneTime, 1e-12)
+  t.ok(b.boss, "world.boss is back")
+  t.ok(b.boss == b.enemies[indexOfBoss(a)], "and it is the restored enemy, not a copy")
+  t.eq(b.boss.hp, 777.25, "no heal")
+  t.eq(b.boss.isBoss, true)
+  t.ok(b.boss.bossDef == Bosses[a.zone.boss], "the registry's def")
+  t.eq(b.boss.def, nil)
+  t.eq(b.boss.sprite, Bosses[a.zone.boss].sprite)
+  t.eq(b.boss.bt, a.boss.bt)
+end
+
+function T.apply_warp_save_resumes_in_the_warp_with_its_clock(t)
+  local a = playedWorld(15)
+  a.phase, a.warpT, a.bossKills, a.zoneTime = "warp", 1.75, 1, a.zone.duration + 30
+  local b = freshWorld(15)
   RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
-  t.eq(b.phase, "waves")
-  t.eq(b.zoneTime, Zones[1].duration)
+  t.eq(b.phase, "warp")
+  t.eq(b.warpT, 1.75)
+  t.eq(b.zoneIndex, a.zoneIndex, "the zone is advanced by the warp ending, as in the original")
+  t.ok(b.zone == Zones[a.zoneIndex])
+  t.eq(b.zoneTime, a.zoneTime)
+  t.eq(b.bossKills, 1)
   t.eq(b.boss, nil)
 end
 
-function T.apply_warp_save_resumes_at_next_zone(t)
-  local a = playedWorld(15)
-  a.phase, a.bossKills = "warp", 1
-  local b = freshWorld(15)
-  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+function T.apply_of_a_version_1_save_always_resumes_in_waves(t)
+  local b = freshWorld(16)
+  b.phase, b.warpT = "warp", 1
+  RunSave.apply(b, legacy(roundTrip(RunSave.snapshot(playedWorld(16)))))
   t.eq(b.phase, "waves")
-  t.eq(b.zoneIndex, 2)
-  t.ok(b.zone == Zones[2], "zone table follows zoneIndex")
-  t.eq(b.zoneTime, 0)
-  t.eq(b.zoneStartDistance, a.distance)
-  t.eq(b.bossKills, 1)
+  t.eq(b.warpT, 0)
+  t.eq(b.boss, nil)
+end
+
+-- a boss fight is only ever saved with the boss in the list
+function T.warp_time_matches_what_the_game_starts_a_dead_boss_with(t)
+  t.eq(RunSave.WARP_TIME, 2.5, "game.lua sets warpT = 2.5 in boss_killed; keep them equal")
 end
 
 function T.apply_resumed_spawns_match_a_run_that_never_paused(t)

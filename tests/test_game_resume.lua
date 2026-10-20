@@ -51,7 +51,9 @@ test("resumed_world_is_frozen_until_the_countdown_ends", function(t)
   t.ok(w.time > time0, "the run advances again")
 end)
 
-test("a_boss_fight_save_resumes_with_the_boss_coming_back_at_full_health", function(t)
+-- Saving mid-boss used to rewind the fight: the boss came back at full health and the
+-- field was cleared, so quitting was a way out of any attack. The fight resumes as it was.
+test("a_boss_fight_save_resumes_the_same_boss_at_the_health_it_had", function(t)
   local w = start({ seed = 31 })
   w.zoneTime = w.zone.duration - 0.05
   local n = 0
@@ -61,14 +63,14 @@ test("a_boss_fight_save_resumes_with_the_boss_coming_back_at_full_health", funct
   t.eq(H.Game.saveRun(), true)
 
   local run = Save.run()
+  t.ok(run, "a boss fight is a valid save")
   StateM.switch("game", { resume = run, seed = run.seed })
   local w2 = H.Game.world
-  t.eq(w2.phase, "waves", "boss is not part of the save")
-  t.eq(w2.boss, nil)
-  seconds(3.2) -- countdown
-  step(5)
-  t.eq(w2.phase, "boss", "the spawner brings it back in")
-  t.eq(w2.boss.hp, w2.boss.maxhp, "at full health")
+  t.eq(StateM.current(), H.Countdown, "3-2-1 first")
+  t.eq(w2.phase, "boss", "resumed inside the fight, not rewound to its arrival")
+  t.ok(w2.boss, "the boss is back")
+  t.eq(w2.boss.hp, 1, "with the health it had: saving is not a heal")
+  t.eq(w2.boss.maxhp, w.boss.maxhp)
 end)
 
 test("resuming_does_not_count_as_a_new_run", function(t)

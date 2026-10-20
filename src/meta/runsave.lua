@@ -16,6 +16,9 @@ local M = {}
 
 local floor, huge = math.floor, math.huge
 
+-- game.lua starts the warp clock at this when a boss dies (a test keeps them equal)
+M.WARP_TIME = 2.5
+
 local RUN_VERSION = 2
 local LEGACY_VERSION = 1 -- before the exact snapshot: no player, timers or cooldowns
 local MAX_WEAPONS = Leveling.MAX_WEAPONS
@@ -97,34 +100,25 @@ function M.snapshot(world, opts)
     rng = {},
     spawnerTimers = timerPairs(world.spawnerState),
   }
-  -- the boss and warp phases still rewind to an empty field (changed in A5)
-  local enemies, slotOf = {}, {}
-  run.bullets, run.ebullets, run.pickups, run.drones = {}, {}, {}, {}
-  if world.phase == "waves" then
-    enemies, slotOf = Entities.captureEnemies(world.enemies or {})
-    run.bullets = Entities.captureBullets(world.bullets or {}, slotOf)
-    run.ebullets = Entities.captureEbullets(world.ebullets or {})
-    run.pickups = Entities.capturePickups(world.pickups or {})
-    run.drones = Entities.captureDrones(world.drones or {}, slotOf, world.time)
-  end
-  run.enemies = enemies
   for i = 1, #STREAMS do
     run.rng[STREAMS[i]] = world.rng[STREAMS[i]]:getState()
   end
 
-  if world.phase == "boss" then
-    -- the boss itself is not saved: rewind to the moment it was triggered, when
-    -- the field is empty, so the spawner brings it in again at full health
-    run.zoneTime = world.zone.duration
-    run.spawnerTimers = {}
-  elseif world.phase == "warp" then
-    -- boss just died: resume at the start of the next zone
-    if not Zones[world.zoneIndex + 1] then return nil end
-    run.zoneIndex = world.zoneIndex + 1
-    run.zoneTime = 0
-    run.zoneStartDistance = world.distance
-    run.spawnerTimers = {}
-  end
+  -- The whole field, in every phase. The boss is one of the enemies; a fight is saved
+  -- with the boss as it stands (health, pattern state, bullets in flight), and the warp
+  -- after it with its clock. Nothing is rewound: quitting is not a way out of an attack.
+  local enemies, slotOf = Entities.captureEnemies(world.enemies or {})
+  run.enemies = enemies
+  run.bullets = Entities.captureBullets(world.bullets or {}, slotOf)
+  run.ebullets = Entities.captureEbullets(world.ebullets or {})
+  run.pickups = Entities.capturePickups(world.pickups or {})
+  run.drones = Entities.captureDrones(world.drones or {}, slotOf, world.time)
+
+  run.phase = world.phase
+  run.warpT = world.phase == "warp" and world.warpT or 0
+  run.boss = world.boss and slotOf[world.boss] or nil
+  -- a boss fight with no boss to rebuild it from is not a save the game could resume
+  if run.phase == "boss" and not run.boss then return nil end
   return run
 end
 
@@ -175,6 +169,16 @@ local function validOwned(list, defs, cap, wantKind, withState)
   return true
 end
 
+-- The game only counts these timers down while they are above zero, so one that has
+-- just run out sits below zero by up to a step, and stays there until it is set again.
+-- That is normal play (after any elite or boss kill, or any hit with i-frames), so it is
+-- valid; anything further below zero cannot have been written by the game.
+local MIN_RUNNING = -1
+
+local function runningTimer(v)
+  return isNum(v) and v >= MIN_RUNNING
+end
+
 -- version 2: where the ship is and how it is moving. Only what could crash or
 -- hang the game is bounded; invulnT is not capped, since an edited save can
 -- already hand out anything, and the test harness holds it at 1e9.
@@ -184,14 +188,14 @@ local function validPlayer(p)
     and isNum(p.y) and p.y >= 0 and p.y <= Viewport.VH
     and isNum(p.vx) and math.abs(p.vx) <= MAX_SPEED
     and isNum(p.vy) and math.abs(p.vy) <= MAX_SPEED
-    and nonNeg(p.invulnT)
+    and runningTimer(p.invulnT)
 end
 
 -- version 2: hit-stop, shield recharge, gravity pulse and hull-ring timers
 local function validRunning(tm)
   if type(tm) ~= "table" then return false end
-  return nonNeg(tm.freezeT) and nonNeg(tm.shieldT)
-    and nonNeg(tm.pulseT) and nonNeg(tm.hpRingT)
+  return runningTimer(tm.freezeT) and runningTimer(tm.shieldT)
+    and runningTimer(tm.pulseT) and runningTimer(tm.hpRingT)
 end
 
 -- { waveIndex, secondsLeft } pairs. Spawner.update loops `while timer <= 0` (adding
@@ -213,6 +217,25 @@ local function validTimers(list, zone)
     end
   end
   return true
+end
+
+-- version 2: where the run stands (waves, a boss fight, or the warp after one), and
+-- that the boss and warp clock agree with it. A boss exists exactly in the boss phase;
+-- both later phases come after the zone's timeline, and a live warp has time left.
+-- Needs run.enemies already validated.
+local PHASES = { waves = true, boss = true, warp = true }
+
+local function validPhase(run)
+  local phase = run.phase
+  if type(phase) ~= "string" or not PHASES[phase] then return false end
+  if phase == "warp" then
+    if not (isNum(run.warpT) and run.warpT > 0 and run.warpT <= M.WARP_TIME) then return false end
+  elseif run.warpT ~= 0 then
+    return false
+  end
+  local zone = Zones[run.zoneIndex]
+  if phase ~= "waves" and run.zoneTime < zone.duration - 1e-9 then return false end
+  return Entities.validBossLink(run.enemies, phase == "boss", run.boss, zone.boss)
 end
 
 -- RunSave.validate(run) -> true only if every field is present, well-typed and in
@@ -252,6 +275,7 @@ function M.validate(run)
   if not validOwned(run.passives, Upgrades, MAX_PASSIVES, "passive") then return false end
   if exact and not (validPlayer(run.player) and validRunning(run.timers)
       and Entities.validEnemies(run.enemies)
+      and validPhase(run)
       and Entities.validBullets(run.bullets, #run.enemies)
       and Entities.validEbullets(run.ebullets)
       and Entities.validPickups(run.pickups)
@@ -298,12 +322,13 @@ function M.apply(world, run)
   world.zone = Zones[run.zoneIndex]
   world.zoneTime = run.zoneTime
   world.zoneStartDistance = run.zoneStartDistance
-  world.phase = "waves"
-  world.boss = nil
-  world.warpT = 0
   local exact = run.version == RUN_VERSION
+  -- a version 1 save always resumes in waves; they never held a boss or a warp
+  world.phase = exact and run.phase or "waves"
+  world.warpT = exact and run.warpT or 0
   -- a version 1 save restores an empty field; bullets after enemies (a target is an enemy slot)
   Entities.restoreEnemies(world, exact and run.enemies or {})
+  world.boss = exact and run.boss and world.enemies[run.boss] or nil
   Entities.restoreBullets(world, exact and run.bullets or {})
   Entities.restoreEbullets(world, exact and run.ebullets or {})
   Entities.restorePickups(world, exact and run.pickups or {})
