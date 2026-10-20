@@ -1,6 +1,6 @@
 # Implementation Plan: Smooth Boss Entrance (Stage 1)
 
-Source of truth: `SPEC.md` (approved). This plan covers **Stage 1 only**: the confirmed bugs. Stage 2 (Android frame-time probe) happens only if stutter remains after Stage 1, and needs its own approval.
+Source of truth: `docs/boss-entrance-smoothness/spec.md` (approved). This plan covers **Stage 1 only**: the confirmed bugs. Stage 2 (Android frame-time probe) happens only if stutter remains after Stage 1, and needs its own approval.
 
 ## Overview
 

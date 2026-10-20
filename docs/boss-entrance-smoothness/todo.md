@@ -1,6 +1,6 @@
 # Task List: Smooth Boss Entrance (Stage 1)
 
-Plan: `docs/boss-entrance-smoothness/plan.md`. Spec: `SPEC.md`. Tests: `lua tests/run.lua`. Work on a branch, one commit per task.
+Plan: `docs/boss-entrance-smoothness/plan.md`. Spec: `docs/boss-entrance-smoothness/spec.md`. Tests: `lua tests/run.lua`. Work on a branch, one commit per task.
 
 ## Phase 1: Boss motion
 
