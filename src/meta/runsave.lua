@@ -96,9 +96,16 @@ function M.snapshot(world, opts)
     passives = ids(world.passives),
     rng = {},
     spawnerTimers = timerPairs(world.spawnerState),
-    -- the boss and warp phases still rewind to an empty field (changed in A5)
-    enemies = world.phase == "waves" and Entities.captureEnemies(world.enemies or {}) or {},
   }
+  -- the boss and warp phases still rewind to an empty field (changed in A5)
+  local enemies, slotOf = {}, {}
+  run.bullets, run.ebullets = {}, {}
+  if world.phase == "waves" then
+    enemies, slotOf = Entities.captureEnemies(world.enemies or {})
+    run.bullets = Entities.captureBullets(world.bullets or {}, slotOf)
+    run.ebullets = Entities.captureEbullets(world.ebullets or {})
+  end
+  run.enemies = enemies
   for i = 1, #STREAMS do
     run.rng[STREAMS[i]] = world.rng[STREAMS[i]]:getState()
   end
@@ -242,7 +249,9 @@ function M.validate(run)
   end
   if not validOwned(run.passives, Upgrades, MAX_PASSIVES, "passive") then return false end
   if exact and not (validPlayer(run.player) and validRunning(run.timers)
-      and Entities.validEnemies(run.enemies)) then
+      and Entities.validEnemies(run.enemies)
+      and Entities.validBullets(run.bullets, #run.enemies)
+      and Entities.validEbullets(run.ebullets)) then
     return false
   end
 
@@ -288,7 +297,10 @@ function M.apply(world, run)
   world.boss = nil
   world.warpT = 0
   local exact = run.version == RUN_VERSION
-  Entities.restoreEnemies(world, exact and run.enemies or {}) -- a version 1 save: empty field
+  -- a version 1 save restores an empty field; bullets after enemies (a target is an enemy slot)
+  Entities.restoreEnemies(world, exact and run.enemies or {})
+  Entities.restoreBullets(world, exact and run.bullets or {})
+  Entities.restoreEbullets(world, exact and run.ebullets or {})
 
   world.level = run.level
   world.xp = run.xp

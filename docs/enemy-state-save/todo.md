@@ -68,7 +68,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/meta/runsave.lua`, `src/meta/runsave_entities.lua` (new), `tests/test_runsave_entities.lua` (new), `tests/support.lua`, `tests/run.lua`
   - Scope: M (5 files)
 
-- [ ] **A3: Enemy and player bullets**
+- [x] **A3: Enemy and player bullets** (473/0 headless and on LÖVE 12, smoke OK. Negative controls: dropping `slowT`/`aoe`, losing a missile's lock, reversing bullet order and skipping enemy bullets each fail the suite. `captureEnemies` now also returns the enemy-to-slot map, which is the "reference table" the plan described. The identity fixtures wait for the specific bullet under test, because immortal enemies soak bullets the instant they are fired.)
   - Description: Capture and restore `ebullets` and `bullets`, including pierce counts, `aoe`, chill, and the homing `target` (saved as an enemy index; nil when the target is gone). Sprites are derived.
   - Acceptance:
     - [ ] Criterion 1 and 2 for bullets, over a fight with every weapon behaviour (forward, spread, homing, pierce, nuclear aoe, cryo).

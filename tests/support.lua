@@ -201,7 +201,7 @@ function M.validRun2(over)
     player = { x = 240, y = 518, vx = 0, vy = 0, invulnT = 0 },
     timers = { freezeT = 0, shieldT = 0, pulseT = 0, hpRingT = 0 },
     weapons = { { id = "blaster", level = 2, cooldown = 0.15 } },
-    enemies = {},
+    enemies = {}, bullets = {}, ebullets = {},
   })
   for k, v in pairs(over or {}) do run[k] = v end
   return run
