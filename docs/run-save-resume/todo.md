@@ -63,7 +63,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
 
 ## Phase 3: Game integration
 
-- [ ] **Task 5: Game resume path, autosave, and clearing**
+- [x] **Task 5: Game resume path, autosave, and clearing** (`Achievements.live` checked: its listeners keep no per-run state, nothing extra to save)
   - Description: `game:enter` accepts `params.resume` (a validated run): builds the world as normal, applies the run, then pushes `countdown`. Add `Game.saveRun()` (the single save entry point) and a 10 s autosave timer in `update`. Clear the save on `player_died` and on a win. Autopilot and daily runs never save. Before changing scope, check `Achievements.live` for per-run counters that need saving.
   - Acceptance:
     - [ ] `Game.saveRun()` writes via `Save.setRun` using the spec's exclusions (dead, `over`, daily, autopilot) and counts an open level-up draft into `pendingLevelUps`.

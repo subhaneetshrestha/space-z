@@ -28,6 +28,7 @@ local WeaponDefs = require("src.content.weapons")
 local Zones = require("src.content.zones")
 
 local Save = require("src.meta.save")
+local RunSave = require("src.meta.runsave")
 local Progress = require("src.meta.progress")
 local Achievements = require("src.meta.achievements")
 
@@ -45,6 +46,8 @@ local ORANGE = { 1, 0.6, 0.25 }
 -- of a zone, so the boss spawn only has to press play.
 local PREWARM_LEAD = 25
 local MUSIC_PUMP_BUDGET = 0.002 -- seconds of CPU per frame
+
+local AUTOSAVE_INTERVAL = 10 -- seconds of play between run saves
 
 -- swap-remove entries whose t exceeds life (arcs, beams, pulses, toasts)
 local function ageList(list, dt)
@@ -166,6 +169,8 @@ local function wireEvents(self, world)
   end)
 
   events:on("player_died", function()
+    -- a dead run must never be resumable, even if the app is killed mid-death-anim
+    Save.clearRun()
     world.phase = "over"
     self.deathT = 1.2
     Particles.explosion(world, world.player.x, world.player.y, 2.6, { 0.3, 0.9, 1 })
@@ -191,9 +196,14 @@ end
 
 function M:enter(params)
   params = params or {}
-  local seed = params.seed or os.time()
+  -- resuming: a validated saved run (menu passes Save.run()); its own seed, mode
+  -- and ship win over whatever the menu and hangar currently say
+  local resume = params.resume
+  if resume and not RunSave.validate(resume) then resume = nil end
+  local seed = resume and resume.seed or params.seed or os.time()
 
-  local ship = Ships[Save.data().settings.ship] or Ships.pathfinder
+  local ship = Ships[resume and resume.ship or Save.data().settings.ship]
+    or Ships.pathfinder
   local player = {
     kind = "player",
     x = VW * 0.5, y = VH * 0.72,
@@ -207,7 +217,7 @@ function M:enter(params)
   }
 
   local world = {
-    mode = params.mode or "standard",
+    mode = resume and resume.mode or params.mode or "standard",
     seed = seed,
     rng = {
       spawn = RNG.new(seed),
@@ -249,8 +259,14 @@ function M:enter(params)
   Leveling.recomputeStats(world)
   player.hp = player.maxhp
 
+  -- overwrite the fresh run's progression with the saved one (same code path
+  -- as a new run up to here, so a resumed run cannot drift from a fresh one)
+  if resume then RunSave.apply(world, resume) end
+
   local settings = Save.data().settings
   self.world = world
+  self.active = true
+  self.saveT = AUTOSAVE_INTERVAL
   self.input = Input.new()
   self.starfield = Starfield.new(seed, settings.quality)
   Particles.setCap(settings.quality == "low" and 220 or 600)
@@ -267,12 +283,34 @@ function M:enter(params)
   wireEvents(self, world)
   Achievements.live(world)
   Audio.load()
-  Music.play("zone", 1)
+  Music.play("zone", world.zoneIndex)
+
+  -- the world is frozen behind a 3-2-1 until the player is ready
+  if resume then StateM.push("countdown") end
+end
+
+function M:leave()
+  -- Game.world outlives the state; saveRun must not snapshot a finished run
+  self.active = false
+end
+
+-- Write the current run to the save file. The one entry point for every trigger
+-- (autosave, pause, quit, app backgrounded). Returns true if a run was written.
+-- RunSave.snapshot refuses dead, finished, daily and autopilot runs.
+function M.saveRun()
+  if not M.active then return false end
+  local top = StateM.current()
+  local run = RunSave.snapshot(M.world, {
+    draftOpen = top ~= nil and top.__name == "levelup",
+  })
+  if not run then return false end
+  return Save.setRun(run)
 end
 
 local function endRun(self, won)
   if self.endedOnce then return end
   self.endedOnce = true
+  Save.clearRun() -- finished: nothing left to continue
   self.summary = Progress.endRun(self.world, won)
 end
 
@@ -368,6 +406,13 @@ function M:update(dt)
     self.tutorial = false
     Save.data().tutorialDone = true
     Save.write()
+  end
+
+  -- autosave, before the draft below takes a pending level-up off the count
+  self.saveT = self.saveT - dt
+  if self.saveT <= 0 then
+    self.saveT = AUTOSAVE_INTERVAL
+    M.saveRun()
   end
 
   -- 12. level-up draft (one at a time; never over a dead ship)

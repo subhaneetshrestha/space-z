@@ -12,6 +12,7 @@ local Leveling = require("src.systems.leveling")
 local Spawner = require("src.systems.spawner")
 local Pool = require("src.core.pool")
 local Events = require("src.core.events")
+local Support = require("tests.support")
 
 local T = {}
 
@@ -355,31 +356,7 @@ local function playedWorld(seed)
   return w
 end
 
--- Path of the first difference between two plain tables, or nil when equal.
--- Numbers compare within 1e-9: json.lua writes floats with 14 significant
--- digits, so accumulated clocks (20 s of 1/60 steps) come back a hair off.
-local function firstDiff(a, b, path)
-  path = path or "run"
-  if type(a) ~= type(b) then return path .. " (type " .. type(a) .. " vs " .. type(b) .. ")" end
-  if type(a) == "number" then
-    if math.abs(a - b) > 1e-9 * math.max(1, math.abs(a)) then
-      return path .. " (" .. tostring(a) .. " vs " .. tostring(b) .. ")"
-    end
-    return nil
-  end
-  if type(a) ~= "table" then
-    if a ~= b then return path .. " (" .. tostring(a) .. " vs " .. tostring(b) .. ")" end
-    return nil
-  end
-  for k, v in pairs(a) do
-    local d = firstDiff(v, b[k], path .. "." .. tostring(k))
-    if d then return d end
-  end
-  for k in pairs(b) do
-    if a[k] == nil then return path .. "." .. tostring(k) .. " (missing in first)" end
-  end
-  return nil
-end
+local firstDiff = Support.firstDiff
 
 local function deepEqual(a, b)
   return firstDiff(a, b) == nil
