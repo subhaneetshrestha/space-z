@@ -309,6 +309,115 @@ test("a_resumed_run_autosaves_run_json_and_never_touches_save_json", function(t)
   end)
 end)
 
+-- ------------------------------------------- a hit deletes the save (SPEC.md Part C)
+-- Killing the app just before a lethal hit used to resume the autosave from up to 10 s
+-- earlier. Death already deletes the save the same frame; now so does every hit, so a
+-- hit that has landed cannot be undone by reloading.
+
+local Damage = require("src.systems.damage")
+
+-- an enemy bullet already on the ship: the next frame's collision hits it
+local function bulletOnTheShip(w, damage)
+  local b = w.pools.ebullets:acquire()
+  b.kind, b.x, b.y, b.vx, b.vy, b.r = "ebullet", w.player.x, w.player.y, 0, 0, 6
+  b.sprite, b.rot, b.scale, b.t, b.dead, b.damage, b.life = "bullet_enemy", 0, 1, 0, false, damage, 5
+  w.ebullets[#w.ebullets + 1] = b
+end
+
+test("a_hit_that_costs_hull_deletes_the_save", function(t)
+  local w = start({ seed = 21 })
+  w.player.invulnT = 0
+  H.Game.saveRun()
+  t.ok(Save.run(), "fixture: a save exists before the hit")
+  local hp = w.player.hp
+  Damage.hitPlayer(w, 5, {})
+  t.eq(w.player.hp, hp - 5, "fixture: the hit cost hull")
+  t.eq(Save.run(), nil, "the save from before the hit is gone")
+  t.eq(Save.rawRun(), nil, "from disk too")
+end)
+
+test("a_hit_a_shield_absorbs_deletes_the_save_too", function(t)
+  local w = start({ seed = 22 })
+  w.player.invulnT = 0
+  w.stats.shieldLevel, w.shieldT = 1, 0
+  H.Game.saveRun()
+  local hp = w.player.hp
+  Damage.hitPlayer(w, 5, {})
+  t.eq(w.player.hp, hp, "fixture: the shield took it")
+  t.ok(w.shieldT > 0, "fixture: and is now recharging")
+  t.eq(Save.run(), nil, "reloading would hand the shield back, so that save is gone as well")
+end)
+
+test("a_hit_while_invulnerable_changes_nothing_and_deletes_nothing", function(t)
+  local w = start({ seed = 23 }) -- the harness keeps the ship invulnerable
+  H.Game.saveRun()
+  local hp = w.player.hp
+  Damage.hitPlayer(w, 5, {})
+  t.eq(w.player.hp, hp)
+  t.ok(Save.run(), "nothing happened to the ship, so the save is still true")
+end)
+
+test("a_real_bullet_collision_deletes_the_save", function(t)
+  local w = start({ seed = 24 })
+  w.player.invulnT = 0
+  H.Game.saveRun()
+  bulletOnTheShip(w, 9)
+  local hp = w.player.hp
+  step(1)
+  t.eq(w.player.hp, hp - 9, "fixture: the bullet hit")
+  t.eq(Save.run(), nil)
+end)
+
+test("an_autosave_on_the_frame_of_the_hit_writes_the_state_after_it", function(t)
+  local w = start({ seed = 25 })
+  w.player.invulnT = 0
+  H.Game.saveRun()
+  bulletOnTheShip(w, 9)
+  H.Game.saveT = STEP / 2 -- the autosave falls due in the very same update as the collision
+  local hp = w.player.hp
+  step(1)
+  t.eq(w.player.hp, hp - 9, "fixture: the bullet hit")
+  local run = Save.run()
+  t.ok(run, "the autosave came after the deletion and wrote a fresh save")
+  t.eq(run.hp, hp - 9, "of the moment after the hit, never the one before it")
+end)
+
+test("after_a_hit_the_next_autosave_and_a_pause_write_fresh_saves", function(t)
+  local w = start({ seed = 26 })
+  w.player.invulnT = 0
+  H.Game.saveRun()
+  Damage.hitPlayer(w, 5, {})
+  t.eq(Save.run(), nil, "fixture: deleted by the hit")
+  w.player.invulnT = 1e9 -- no further hits while the clock runs
+  seconds(11)
+  local run = Save.run()
+  t.ok(run, "the autosave wrote a save again")
+  t.near(run.hp, w.player.hp, 1, "of the post-hit hull")
+
+  Save.clearRun()
+  StateM.keypressed("escape")
+  t.ok(Save.run(), "and so does the pause menu")
+  t.eq(Save.run().hp, w.player.hp)
+end)
+
+test("the_first_hit_after_a_resume_deletes_the_save_it_resumed_from", function(t)
+  start({ seed = 27 })
+  local w2 = pauseQuitContinue()
+  t.ok(Save.run(), "fixture: the save the run came from is still on disk")
+  w2.player.invulnT = 0
+  Damage.hitPlayer(w2, 5, {})
+  t.eq(Save.run(), nil, "one hit and the pre-hit state is no longer loadable")
+end)
+
+test("death_still_deletes_the_save_at_once", function(t)
+  local w = start({ seed = 28 })
+  w.player.invulnT = 0
+  H.Game.saveRun()
+  Damage.hitPlayer(w, 1e6, {})
+  t.eq(w.player.dead, true)
+  t.eq(Save.run(), nil)
+end)
+
 test("a_win_clears_the_save_and_counts_the_run_once", function(t)
   local w = played()
   H.Game.saveRun()

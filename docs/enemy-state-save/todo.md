@@ -134,6 +134,20 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/states/game.lua`, `tests/test_game_resume.lua`, `tests/test_pause_save.lua`, `tests/test_app_lifecycle.lua`
   - Scope: M
 
+- [x] **A8: A hit deletes the save** (added after A7; `SPEC.md` Part C, criteria 17 and 18. 693/0 headless and on LÖVE 12, smoke identical (`kills=381`). Controls: removing the deletion from either handler fails the matching tests. The user chose this fix over exact-saves-only, a recovery slot and a replay journal; it does NOT close a kill before the first hit after a save, and the spec says so. Open follow-up if wanted: after a hit there is no save for up to 10 s, so a crash in that window loses the run; re-saving about 1 s after each hit would shorten it, at the cost of more writes.)
+  - Description: In `game.lua`'s `player_damaged` and `shield_blocked` handlers call `Save.clearRun()` first, so a save written before a hit cannot be loaded after it. The next autosave, pause, background or quit writes a fresh exact save. Not a rewrite at the hit: a mid-collision snapshot is not exact.
+  - Acceptance:
+    - [ ] A hit that costs hull deletes the saved run, both through `Damage.hitPlayer` and through a real bullet collision.
+    - [ ] A hit absorbed by the shield deletes it too; a hit while invulnerable deletes nothing.
+    - [ ] The next autosave writes a fresh save of the post-hit state, including when the autosave falls on the same frame as the hit; pause writes one too.
+    - [ ] Death still deletes at once (existing test unchanged).
+    - [ ] After a resume, the first hit deletes the save the run was resumed from.
+  - Verify:
+    - [ ] Tests first, then pass: `lua tests/run.lua`; `lovec . --test`
+  - Dependencies: A7
+  - Files: `src/states/game.lua`, `tests/test_game_resume.lua`
+  - Scope: XS
+
 ### Checkpoint: Cheat closed
 - [ ] Behavioural identity passes for all seven bosses and all six enemy movement types
 - [ ] No-dodge test passes; the suite and the engine tests are green on LÖVE 12

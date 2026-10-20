@@ -30,7 +30,7 @@ and the player in the same position. Every build of the game (desktop, Android, 
 |---|---|
 | Fidelity | **Exact snapshot.** Everything that affects gameplay is saved as it is, with nothing rewound, rounded or rebuilt: enemies, enemy bullets, the boss (HP and behaviour state), player bullets, pickups, drones (including orbit angle) and the player. |
 | Grace period | **None.** The 3-2-1 countdown (world frozen, as today) is the only pause. No invulnerability after it. |
-| Save slot | Unchanged: one slot in `run.json`, not consumed on load. |
+| Save slot | One slot in `run.json`, not consumed on load. Deleted when the ship is hit and when it dies (Part C). |
 | LÖVE target | **Always the latest LÖVE through the whole development cycle.** That is 12.0 now. `conf.lua`, CI, Windows, Android, web and local dev all move to it, and track new releases as they come. |
 
 ## Part A: Entity-complete run save
@@ -98,6 +98,32 @@ damage-flash timers, music state.
 9. **No change to normal play.** A run that is never saved or resumed behaves exactly as before. The
    existing run-save criteria (clear on death, daily and autopilot never saved, `endRun` once, and so
    on) still hold. `save.json` is not touched.
+
+## Part C: Rollback by killing the app (added after A7)
+
+The exact snapshot closes "save, quit, continue to escape an attack". A second route remained: the
+game rewrites the save every 10 s, so a player about to be killed can force-kill the app before the
+lethal hit lands (no death event ever fires) and Continue from the autosave up to 10 s earlier.
+Death already deletes the save the same frame (`player_died`), so dying then killing the app gains nothing.
+
+**Decision (the user's, after being offered three fixes):** delete the save when the ship is hit.
+
+17. **A hit deletes the save.** When the ship takes a hit, whether it loses hull or the hit is absorbed
+    by a shield, the saved run is deleted at once (`Save.clearRun`), so no save from before that hit
+    can be loaded: a hit cannot be undone by killing the app. The next autosave, pause, background or
+    quit writes a fresh, exact save of the moment after the hit. A hit that changes nothing (the ship is
+    invulnerable) deletes nothing. The save is deleted, not rewritten, at the hit: a snapshot in the middle
+    of collision handling would not be exact.
+18. **Death still deletes at once** (unchanged).
+
+**What this does not close, stated plainly.** A kill before the *first* hit after a save still resumes
+that save (at most 10 s old, or exactly the pause moment). In Black Hole mode any hit is lethal, so the
+first hit is the last. The options that close it completely were declined for now: exact saves only (no
+autosave, Continue consumes the save), a recovery slot that forfeits stardust, and a replay journal.
+Copying `run.json` aside and putting it back cannot be prevented offline.
+
+**Cost.** After a hit there is no save until the next autosave (up to 10 s), so a crash in that window
+loses the run.
 
 ## Part B: LÖVE 12 compatibility
 

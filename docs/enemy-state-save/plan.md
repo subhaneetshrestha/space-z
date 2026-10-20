@@ -128,6 +128,7 @@ A-tasks are sequential (shared file `runsave.lua`). B3 to B6 are independent of 
 - [ ] A5: Boss and phase rules
 - [ ] A6: Validation fuzz, caps, autosave cost
 - [ ] A7: Game integration and the no-dodge test
+- [ ] A8: A hit deletes the save (rollback fix chosen by the user; `SPEC.md` Part C)
 
 ### Checkpoint: Cheat closed
 - [ ] Behavioural identity passes for all seven bosses and all enemy movement types

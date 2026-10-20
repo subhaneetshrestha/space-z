@@ -106,6 +106,9 @@ local function wireEvents(self, world)
   end)
 
   events:on("shield_blocked", function()
+    -- the shield took this hit: the saved run still has it ready, so reloading it would
+    -- hand it back. Gone, as for a hit that costs hull (see player_damaged).
+    Save.clearRun()
     local toasts = world.toasts
     toasts[#toasts + 1] = { text = "SHIELD DOWN", t = 0, life = 1.6 }
     Particles.burst(world, world.player.x, world.player.y, {
@@ -163,6 +166,12 @@ local function wireEvents(self, world)
   end)
 
   events:on("player_damaged", function(amount)
+    -- A save on disk was written before this hit. Killing the app and continuing would
+    -- undo it (the run would come back before the bullet landed), so it is deleted now,
+    -- like a death. It is deleted, not rewritten: this runs in the middle of collision
+    -- handling, where a snapshot would not be exact. The next autosave, pause,
+    -- background or quit writes a fresh one.
+    Save.clearRun()
     self.damageFlashT = 0.35
     world.hpRingT = 2.0
     Audio.play("hurt")
