@@ -89,7 +89,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Files: `src/states/pause.lua`
   - Scope: XS
 
-- [ ] **Task 7: Menu CONTINUE row and overwrite guard**
+- [x] **Task 7: Menu CONTINUE row and overwrite guard** (logic tested; the look of the row and the orange abandon prompt still need a manual `love .` check)
   - Description: When `Save.run()` is valid, `CONTINUE` is the first row and default selection; activating it does `StateM.switch("game", { resume = run, mode = run.mode, seed = run.seed })`. With a save present, LAUNCH and DAILY RUN need a second press ("ABANDON SAVED RUN? TAP AGAIN"); moving the selection or leaving cancels it. A confirmed new run calls `Save.clearRun()`.
   - Acceptance:
     - [ ] No saved run: menu is identical to today.

@@ -36,6 +36,7 @@ local FILES = {
   "tests.test_runsave",
   "tests.test_countdown",
   "tests.test_game_resume",
+  "tests.test_menu_continue",
   "tests.test_damage",
   "tests.test_leveling",
   "tests.test_pickups",
