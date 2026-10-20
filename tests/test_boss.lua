@@ -93,6 +93,59 @@ function T.boss_first_behavior_step_stays_at_arena_position(t)
   expectNone(t, bad, "boss left its arrival pose on the first behavior step")
 end
 
+-- Entrance: starts at 95 px/s, decelerates, never stalls, ends exactly on arenaY.
+local ENTER_SPEED, ENTER_FLOOR, ENTER_MAX_SECONDS = 95, 20, 4.0
+
+function T.boss_entrance_decelerates_into_position(t)
+  local bad = {}
+  for _, id in ipairs(bossIds()) do
+    local w = fakeWorld()
+    local e = Boss.spawn(w, id)
+    local speeds, prevY, arrivedAt = {}, e.y, nil
+    for step = 1, 60 * 20 do
+      Boss.update(w, DT)
+      speeds[#speeds + 1] = (e.y - prevY) / DT
+      prevY = e.y
+      if not e.entering then arrivedAt = step break end
+    end
+    if not arrivedAt then
+      bad[#bad + 1] = id .. " never arrived"
+    else
+      local arenaY = e.y
+      local secs = arrivedAt * DT
+      local problems = {}
+      if secs > ENTER_MAX_SECONDS then
+        problems[#problems + 1] = string.format("took %.2f s (limit %.1f)", secs, ENTER_MAX_SECONDS)
+      end
+      if math.abs(speeds[1] - ENTER_SPEED) > 1 then
+        problems[#problems + 1] = string.format("starts at %.0f px/s, expected %d", speeds[1], ENTER_SPEED)
+      end
+      -- last step may be a short snap onto arenaY; judge the ones before it
+      local n = #speeds - 1
+      for i = 2, n do
+        if speeds[i] > speeds[i - 1] + 1e-6 then
+          problems[#problems + 1] = string.format("speeds up at step %d", i)
+          break
+        end
+      end
+      if n >= 1 and speeds[n] < ENTER_FLOOR - 0.5 then
+        problems[#problems + 1] = string.format("slows to %.1f px/s, below floor %d", speeds[n], ENTER_FLOOR)
+      end
+      if n >= 1 and speeds[n] > ENTER_FLOOR + 0.5 then
+        problems[#problems + 1] = string.format("still moving %.0f px/s one step before arrival, expected about %d",
+          speeds[n], ENTER_FLOOR)
+      end
+      if e.y ~= arenaY or prevY > arenaY then
+        problems[#problems + 1] = "overshoots arenaY"
+      end
+      if #problems > 0 then
+        bad[#bad + 1] = id .. ": " .. table.concat(problems, ", ")
+      end
+    end
+  end
+  expectNone(t, bad, "boss entrance profile")
+end
+
 -- Leviathan: hover/telegraph/dive/rise. Dive and rise are fast on purpose; every
 -- other step (notably the first one back in hover) must stay smooth.
 local HOVER_STEP_LIMIT = 14 -- px per step; the return blend peaks near 12

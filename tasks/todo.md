@@ -29,7 +29,7 @@ Plan: `tasks/plan.md`. Spec: `SPEC.md`. Tests: `lua tests/run.lua`. Work on a br
   - Files: `src/systems/boss.lua`, `tests/test_boss.lua`
   - Scope: S (2 files)
 
-- [ ] **Task 3: Boss entrance decelerates into position**
+- [x] **Task 3: Boss entrance decelerates into position**
   - Description: Replace the constant 95 px/s descent with `clamp(K * (arenaY - y), FLOOR, 95)`, ending with a snap to `arenaY`. Tune `K` and `FLOOR` against the limits below.
   - Acceptance:
     - [ ] First-second speed is still 95 px/s, and speed never rises, never goes below `FLOOR` (except the final snap step), and never overshoots `arenaY`.

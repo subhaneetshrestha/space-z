@@ -15,6 +15,9 @@ local TWO_PI = 2 * pi
 
 local VW, VH = Viewport.VW, Viewport.VH
 
+-- entrance descent: px/s cruise speed, slow-down gain (1/s), and minimum speed
+local ENTER_SPEED, ENTER_K, ENTER_FLOOR = 95, 2.2, 20
+
 -- ------------------------------------------------------------ shared helpers
 
 local function spawnEbullet(world, x, y, vx, vy, damage)
@@ -429,7 +432,12 @@ function M.update(world, dt)
   end
 
   if e.entering then
-    e.y = e.y + 95 * dt
+    -- cruise at ENTER_SPEED, then slow in proportion to the distance left; the
+    -- floor keeps it from stalling short of the arena
+    local speed = (b.arenaY - e.y) * ENTER_K
+    if speed > ENTER_SPEED then speed = ENTER_SPEED
+    elseif speed < ENTER_FLOOR then speed = ENTER_FLOOR end
+    e.y = e.y + speed * dt
     if e.y >= b.arenaY then
       e.y = b.arenaY
       e.entering = false
