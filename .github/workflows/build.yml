@@ -5,11 +5,12 @@ name: build
 #   - SpaceZ-*-windows-x64  standalone Windows folder (exe + DLLs), zipped
 #   - SpaceZ-*-debug.apk    debug-signed Android APK, installs directly on a device
 #
-# Every push to main auto-bumps the patch version (first release is v0.0.1), tags the
-# commit, and publishes a GitHub Release with all three attached — permanent, public
-# download links, no GitHub account needed. Put "#minor" or "#major" in the commit
-# message for a bigger bump. Pushing a v* tag by hand releases that exact version.
-# Pull requests build the same artifacts but publish nothing.
+# Builds only run when something lands on main. Each build is versioned
+# MAJOR.MINOR.BUILD, tagged vMAJOR.MINOR.BUILD, and published as a GitHub Release with
+# all three attached — permanent, public download links, no GitHub account needed.
+#   MAJOR.MINOR  comes from the VERSION file at the repo root; edit it to move to 1.2, 2.0, ...
+#   BUILD        is the workflow run number, so it increases with every build.
+# Pull requests only run the test suite; nothing is built or published.
 #
 # Build logic lives in build/*.ps1 (the same scripts used locally on Windows); the
 # runners execute them with pwsh, which is preinstalled on GitHub's ubuntu images.
@@ -17,14 +18,7 @@ name: build
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
-  workflow_dispatch:
-    inputs:
-      release:
-        description: 'Publish a release (bumps the version) instead of artifacts only'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -52,65 +46,34 @@ jobs:
   version:
     name: resolve version
     needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
       version_code: ${{ steps.resolve.outputs.version_code }}
-      release: ${{ steps.resolve.outputs.release }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # need the tag history to find the previous release
 
-      # Tag push v1.2.3        -> 1.2.3, released under that tag.
-      # Push to main           -> previous tag + 1 patch (or #minor / #major), released.
-      # Anything else          -> <next>-dev.<run number>, artifacts only.
       - name: Resolve version
         id: resolve
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            version="${GITHUB_REF#refs/tags/v}"
-            release=true
-          else
-            # highest existing vMAJOR.MINOR.PATCH tag; empty on a fresh repo
-            latest=$(git tag -l --sort=-v:refname \
-                     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
-
-            if [[ -z "$latest" ]]; then
-              version="0.0.1"
-              echo "no release tags yet -> starting at $version"
-            else
-              IFS=. read -r major minor patch <<< "${latest#v}"
-              msg=$(git log -1 --pretty=%B)
-              case "$msg" in
-                *'#major'*) major=$((major + 1)); minor=0; patch=0 ;;
-                *'#minor'*) minor=$((minor + 1)); patch=0 ;;
-                *)          patch=$((patch + 1)) ;;
-              esac
-              version="$major.$minor.$patch"
-              echo "previous release $latest -> $version"
-            fi
-
-            if [[ "$GITHUB_REF" == refs/heads/main && "$GITHUB_EVENT_NAME" == push ]] \
-               || [[ "${{ inputs.release }}" == "true" ]]; then
-              release=true
-            else
-              release=false
-              version="$version-dev.$GITHUB_RUN_NUMBER"
-            fi
+          base=$(tr -d '[:space:]' < VERSION)
+          if ! [[ "$base" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION must look like 1.1 (MAJOR.MINOR), got '$base'" >&2
+            exit 1
           fi
 
+          version="$base.$GITHUB_RUN_NUMBER"
           {
             echo "version=$version"
             echo "tag=v$version"
             # Android requires an ever-increasing integer; run_number never repeats
             echo "version_code=$GITHUB_RUN_NUMBER"
-            echo "release=$release"
           } >> "$GITHUB_OUTPUT"
-          echo "building $version (code $GITHUB_RUN_NUMBER, release=$release)"
+          echo "building $version"
 
   package:
     name: package .love
@@ -242,7 +205,6 @@ jobs:
 
   release:
     name: publish release
-    if: needs.version.outputs.release == 'true'
     needs: [version, package, windows, android]
     runs-on: ubuntu-latest
     permissions:
