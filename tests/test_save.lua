@@ -16,6 +16,8 @@ function T.defaults_shape(t)
   t.eq(d.unlocked.blackhole, false)
   t.eq(d.settings.quality, "high")
   t.eq(d.settings.steerMode, nil, "steerMode retired: steering is always 1:1 drag")
+  t.eq(d.run, nil, "no saved run by default; old saves without the key load fine")
+  t.eq(d.version, 1, "adding run needs no schema bump")
 end
 
 function T.data_memoizes(t)

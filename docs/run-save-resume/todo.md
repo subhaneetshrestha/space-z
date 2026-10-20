@@ -15,7 +15,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Files: `src/core/rng.lua`, `tests/test_rng.lua`
   - Scope: XS
 
-- [ ] **Task 2: Snapshot, validate, and store a run**
+- [x] **Task 2: Snapshot, validate, and store a run**
   - Description: New pure module `src/meta/runsave.lua` with `snapshot(world)` and `validate(run)`, plus `Save.run()` (validated or nil), `Save.setRun(run)`, `Save.clearRun()`. `run` defaults to nil, `Save.reset()` clears it.
   - Acceptance:
     - [ ] `snapshot` captures every field listed in the spec ("What a snapshot contains"), HP unrounded, and applies the phase table: `boss` -> `waves` at `zoneTime = zone.duration`; `warp` -> next zone start (nil when it was the last zone); dead / `over` / `daily` -> nil.

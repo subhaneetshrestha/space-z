@@ -26,6 +26,7 @@ local function defaults()
     bestDistanceBH = 0,
     tutorialDone = false,
     daily = nil, -- { date = "YYYYMMDD", bestStardust, bestDistance, runs }
+    run = nil,   -- in-progress run snapshot (see src/meta/runsave.lua); nil = none
   }
 end
 
@@ -73,6 +74,29 @@ function M.write()
     return ok and success or false
   end
   return true
+end
+
+-- The saved run, or nil if there is none or it fails validation (the file is
+-- untrusted: a bad run counts as no run). Lazy require: runsave reaches content
+-- modules that must not load while save.lua itself is still loading.
+function M.run()
+  local run = M.data().run
+  if run ~= nil and require("src.meta.runsave").validate(run) then
+    return run
+  end
+  return nil
+end
+
+function M.setRun(run)
+  M.data().run = run
+  return M.write()
+end
+
+function M.clearRun()
+  if M.data().run ~= nil then
+    M.data().run = nil
+    M.write()
+  end
 end
 
 function M.reset()
