@@ -7,6 +7,7 @@ local Ships = require("src.content.ships")
 local Weapons = require("src.content.weapons")
 local Upgrades = require("src.content.upgrades")
 local Zones = require("src.content.zones")
+local Leveling = require("src.systems.leveling")
 
 local M = {}
 
@@ -164,6 +165,72 @@ function M.validate(run)
   end
 
   return validTimers(run.spawnerTimers, Zones[run.zoneIndex])
+end
+
+-- ----------------------------------------------------------------- apply
+
+local function fill(list, owned, defs)
+  for i = #list, 1, -1 do list[i] = nil end
+  for i = 1, #owned do
+    list[i] = { def = defs[owned[i].id], level = owned[i].level }
+  end
+end
+
+-- RunSave.apply(world, run) -> true, or false (world untouched) if the run is invalid.
+-- `world` is a fresh world built by game:enter; this overwrites its progression
+-- with the saved one. Position, cooldowns and transient timers keep their
+-- new-run values (spec: not saved).
+function M.apply(world, run)
+  if not M.validate(run) then return false end
+
+  local ship = Ships[run.ship]
+  local player = world.player
+  player.shipDef = ship
+  player.sprite = ship.sprite
+
+  world.mode = run.mode
+  world.seed = run.seed
+  world.time = run.time
+  world.distance = run.distance
+  world.zoneIndex = run.zoneIndex
+  world.zone = Zones[run.zoneIndex]
+  world.zoneTime = run.zoneTime
+  world.zoneStartDistance = run.zoneStartDistance
+  world.phase = "waves"
+  world.boss = nil
+  world.warpT = 0
+
+  world.level = run.level
+  world.xp = run.xp
+  world.xpNext = run.xpNext
+  world.pendingLevelUps = run.pendingLevelUps
+  world.kills = run.kills
+  world.bossKills = run.bossKills
+  world.noDamage = run.noDamage
+  world.stardustEarned = run.stardustEarned
+
+  -- the tables are filled in place: other code may already hold them
+  fill(world.weapons, run.weapons, Weapons) -- cooldown is absent == reset
+  for i = 1, #world.weapons do world.weapons[i].cooldown = 0 end
+  fill(world.passives, run.passives, Upgrades)
+
+  for i = 1, #STREAMS do
+    world.rng[STREAMS[i]]:setState(run.rng[STREAMS[i]])
+  end
+  local timers = {}
+  for i = 1, #run.spawnerTimers do
+    timers[run.spawnerTimers[i][1]] = run.spawnerTimers[i][2]
+  end
+  world.spawnerState = { timers = timers }
+
+  world.shieldT, world.hpRingT, world.freezeT, world.pulseT = 0, 0, 0, 0
+
+  -- stats from a clean slate (nil old stats == full hull), then the saved hull.
+  -- recomputeStats keeps already-taken damage, so it must not see a stale hp.
+  world.stats = nil
+  Leveling.recomputeStats(world)
+  player.hp = math.max(1, math.min(run.hp, player.maxhp))
+  return true
 end
 
 return M

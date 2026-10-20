@@ -8,6 +8,10 @@ local Ships = require("src.content.ships")
 local Weapons = require("src.content.weapons")
 local Upgrades = require("src.content.upgrades")
 local Zones = require("src.content.zones")
+local Leveling = require("src.systems.leveling")
+local Spawner = require("src.systems.spawner")
+local Pool = require("src.core.pool")
+local Events = require("src.core.events")
 
 local T = {}
 
@@ -289,6 +293,251 @@ function T.validate_never_throws_on_hostile_input(t)
     t.ok(ok, "case " .. i .. " must not throw")
     t.eq(result, false, "case " .. i)
   end
+end
+
+-- ------------------------------------------------------------------- apply
+
+-- A brand-new run exactly as game:enter builds it (headless subset): starting
+-- weapon, computed stats, full hull, spawn-point player, empty field.
+local function freshWorld(seed, shipId)
+  local ship = Ships[shipId or "pathfinder"]
+  local world = {
+    mode = "standard", seed = seed, daily = false,
+    rng = {
+      spawn = RNG.new(seed), drops = RNG.new(seed + 1),
+      cards = RNG.new(seed + 2), misc = RNG.new(seed + 3),
+    },
+    events = Events.new(),
+    time = 0, distance = 0, scrollSpeed = 120,
+    zoneIndex = 1, zone = Zones[1], zoneTime = 0, zoneStartDistance = 0,
+    phase = "waves", warpT = 0,
+    player = { x = 240, y = 518, hp = ship.maxhp, maxhp = ship.maxhp,
+               dead = false, shipDef = ship, sprite = ship.sprite },
+    enemies = {}, ebullets = {},
+    pools = { enemies = Pool.new(), ebullets = Pool.new() },
+    boss = nil,
+    weapons = {}, passives = {},
+    level = 1, xp = 0, xpNext = 8, pendingLevelUps = 0,
+    kills = 0, bossKills = 0, noDamage = true, stardustEarned = 0,
+    shieldT = 0, freezeT = 0, hpRingT = 0, pulseT = 0,
+  }
+  Leveling.addWeapon(world, Weapons[ship.startingWeapon])
+  Leveling.recomputeStats(world)
+  world.player.hp = world.player.maxhp
+  return world
+end
+
+local function simulate(world, seconds)
+  local dt = 1 / 60
+  for _ = 1, math.floor(seconds / dt + 0.5) do
+    world.time = world.time + dt
+    world.zoneTime = world.zoneTime + dt
+    Spawner.update(world, dt)
+  end
+end
+
+-- A run that has been played for a while: bigger build, damaged, 20 s into zone 1.
+local function playedWorld(seed)
+  local w = freshWorld(seed, "aegis")
+  Leveling.addWeapon(w, Weapons.missiles)
+  w.weapons[2].level = 3
+  w.weapons[2].cooldown = 0.9
+  w.weapons[1].cooldown = 0.2
+  Leveling.addPassive(w, Upgrades.hull_plating)
+  w.passives[1].level = 3
+  Leveling.recomputeStats(w)
+  w.level, w.xp, w.xpNext, w.pendingLevelUps = 6, 14.5, 40, 1
+  w.kills, w.bossKills, w.noDamage, w.stardustEarned = 52, 0, false, 25
+  w.distance, w.zoneStartDistance = 2400.75, 0
+  w.shieldT, w.hpRingT = 1.5, 1.0
+  simulate(w, 20)
+  w.player.hp = 37.5
+  return w
+end
+
+-- Path of the first difference between two plain tables, or nil when equal.
+-- Numbers compare within 1e-9: json.lua writes floats with 14 significant
+-- digits, so accumulated clocks (20 s of 1/60 steps) come back a hair off.
+local function firstDiff(a, b, path)
+  path = path or "run"
+  if type(a) ~= type(b) then return path .. " (type " .. type(a) .. " vs " .. type(b) .. ")" end
+  if type(a) == "number" then
+    if math.abs(a - b) > 1e-9 * math.max(1, math.abs(a)) then
+      return path .. " (" .. tostring(a) .. " vs " .. tostring(b) .. ")"
+    end
+    return nil
+  end
+  if type(a) ~= "table" then
+    if a ~= b then return path .. " (" .. tostring(a) .. " vs " .. tostring(b) .. ")" end
+    return nil
+  end
+  for k, v in pairs(a) do
+    local d = firstDiff(v, b[k], path .. "." .. tostring(k))
+    if d then return d end
+  end
+  for k in pairs(b) do
+    if a[k] == nil then return path .. "." .. tostring(k) .. " (missing in first)" end
+  end
+  return nil
+end
+
+local function deepEqual(a, b)
+  return firstDiff(a, b) == nil
+end
+
+function T.apply_restores_a_run_so_its_snapshot_is_identical(t)
+  local a = playedWorld(2024)
+  t.ok(a.player.maxhp >= 38, "fixture needs room for 37.5 hp")
+  local run = roundTrip(RunSave.snapshot(a))
+
+  local b = freshWorld(2024, "pathfinder") -- default ship: the run's must win
+  t.eq(RunSave.apply(b, run), true)
+
+  t.eq(firstDiff(RunSave.snapshot(b), RunSave.snapshot(a)), nil,
+    "snapshot(restored) must equal snapshot(original), every field")
+end
+
+function T.apply_sets_the_runs_ship_and_recomputes_stats(t)
+  local a = playedWorld(7)
+  local b = freshWorld(7, "pathfinder")
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.player.shipDef.id, "aegis")
+  t.eq(b.player.sprite, Ships.aegis.sprite)
+  t.eq(b.stats.maxhp, a.stats.maxhp, "maxhp rebuilt from ship + passives")
+  t.eq(b.player.maxhp, a.player.maxhp)
+  t.eq(b.stats.shieldLevel, a.stats.shieldLevel, "ship bonuses applied")
+end
+
+function T.apply_restores_fractional_hp_exactly(t)
+  local a = playedWorld(8)
+  local b = freshWorld(8)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.player.hp, 37.5)
+end
+
+function T.apply_clamps_hp_to_one_through_maxhp(t)
+  local a = playedWorld(9)
+  local run = roundTrip(RunSave.snapshot(a))
+
+  run.hp = 0.2
+  local low = freshWorld(9)
+  RunSave.apply(low, run)
+  t.eq(low.player.hp, 1)
+
+  run.hp = 99999
+  local high = freshWorld(9)
+  RunSave.apply(high, run)
+  t.eq(high.player.hp, high.player.maxhp)
+end
+
+function T.apply_zeroes_cooldowns_and_transient_timers(t)
+  local a = playedWorld(10)
+  local b = freshWorld(10)
+  b.shieldT, b.hpRingT, b.freezeT, b.pulseT = 2, 2, 2, 2 -- stale values must go
+  b.weapons[1].cooldown = 0.3
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  for i = 1, #b.weapons do
+    t.eq(b.weapons[i].cooldown, 0, "weapon " .. i .. " cooldown")
+  end
+  t.eq(b.shieldT, 0)
+  t.eq(b.hpRingT, 0)
+  t.eq(b.freezeT, 0)
+  t.eq(b.pulseT, 0)
+end
+
+function T.apply_leaves_player_at_the_spawn_point(t)
+  local b = freshWorld(11)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(playedWorld(11))))
+  t.eq(b.player.x, 240)
+  t.eq(b.player.y, 518)
+end
+
+function T.apply_keeps_the_weapon_and_passive_tables(t)
+  local b = freshWorld(12)
+  local weapons, passives = b.weapons, b.passives
+  RunSave.apply(b, roundTrip(RunSave.snapshot(playedWorld(12))))
+  t.ok(b.weapons == weapons, "same weapons table (other code may hold it)")
+  t.ok(b.passives == passives, "same passives table")
+  t.eq(#b.weapons, 2)
+  t.eq(b.weapons[2].def.id, "missiles")
+  t.eq(b.weapons[2].level, 3)
+end
+
+function T.apply_restores_evolved_weapons(t)
+  local a = playedWorld(13)
+  a.weapons[1].def = Weapons.plasma_storm
+  a.weapons[1].level = 1
+  local b = freshWorld(13)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.weapons[1].def, Weapons.plasma_storm)
+end
+
+function T.apply_boss_phase_save_resumes_in_waves_with_no_boss(t)
+  local a = playedWorld(14)
+  a.phase, a.zoneTime, a.boss = "boss", Zones[1].duration + 20, { hp = 3 }
+  local b = freshWorld(14)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.phase, "waves")
+  t.eq(b.zoneTime, Zones[1].duration)
+  t.eq(b.boss, nil)
+end
+
+function T.apply_warp_save_resumes_at_next_zone(t)
+  local a = playedWorld(15)
+  a.phase, a.bossKills = "warp", 1
+  local b = freshWorld(15)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  t.eq(b.phase, "waves")
+  t.eq(b.zoneIndex, 2)
+  t.ok(b.zone == Zones[2], "zone table follows zoneIndex")
+  t.eq(b.zoneTime, 0)
+  t.eq(b.zoneStartDistance, a.distance)
+  t.eq(b.bossKills, 1)
+end
+
+function T.apply_resumed_spawns_match_a_run_that_never_paused(t)
+  local a = playedWorld(31337)
+  local run = roundTrip(RunSave.snapshot(a))
+  local before = #a.enemies
+
+  local b = freshWorld(31337)
+  RunSave.apply(b, run)
+  simulate(a, 12) -- the original keeps playing...
+  simulate(b, 12) -- ...the resumed copy plays the same 12 s from the save
+
+  t.eq(#b.enemies, #a.enemies - before, "same number of new spawns")
+  t.ok(#b.enemies > 0, "fixture must actually spawn something")
+  for i = 1, #b.enemies do
+    local ea, eb = a.enemies[before + i], b.enemies[i]
+    t.eq(eb.x, ea.x, "x of spawn " .. i)
+    t.eq(eb.y, ea.y, "y of spawn " .. i)
+    t.eq(eb.def.id, ea.def.id, "type of spawn " .. i)
+    t.eq(eb.elite, ea.elite, "elite flag of spawn " .. i)
+  end
+end
+
+function T.apply_resumed_card_offer_matches_the_original(t)
+  local a = playedWorld(555)
+  local b = freshWorld(555)
+  RunSave.apply(b, roundTrip(RunSave.snapshot(a)))
+  local offerA = Leveling.buildOffer(a)
+  local offerB = Leveling.buildOffer(b)
+  t.eq(#offerB, 3)
+  for i = 1, 3 do
+    t.eq(offerB[i].def.id, offerA[i].def.id, "card " .. i)
+    t.eq(offerB[i].newLevel, offerA[i].newLevel, "card " .. i .. " level")
+  end
+end
+
+function T.apply_rejects_an_invalid_run_without_touching_the_world(t)
+  local b = freshWorld(16)
+  local before = RunSave.snapshot(b)
+  local run = roundTrip(RunSave.snapshot(playedWorld(16)))
+  run.weapons[1].id = "bfg"
+  t.eq(RunSave.apply(b, run), false)
+  t.eq(RunSave.apply(b, nil), false)
+  t.ok(deepEqual(RunSave.snapshot(b), before), "world unchanged")
+  t.eq(b.player.shipDef.id, "pathfinder")
 end
 
 -- ------------------------------------------------------------ Save helpers

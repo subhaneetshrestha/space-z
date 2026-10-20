@@ -28,7 +28,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Files: `src/meta/runsave.lua` (new), `src/meta/save.lua`, `tests/test_runsave.lua` (new), `tests/test_save.lua`, `tests/run.lua`
   - Scope: M (5 files)
 
-- [ ] **Task 3: Apply a run to a fresh world**
+- [x] **Task 3: Apply a run to a fresh world**
   - Description: `runsave.apply(world, run)` copies progression fields onto a freshly built world, rebuilds weapons/passives from ids, restores RNG states and spawner timers, calls `Leveling.recomputeStats`, then sets `player.hp` (clamped to `[1, maxhp]`).
   - Acceptance:
     - [ ] Snapshot -> JSON -> validate -> apply into a fresh world: all snapshot fields are equal (spec criterion 2), including evolved weapons and fractional HP.
@@ -41,8 +41,8 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
   - Scope: S
 
 ### Checkpoint: Data layer
-- [ ] `lua tests/run.lua` passes
-- [ ] Criteria 1, 2, 3, 10 proven by tests
+- [x] `lua tests/run.lua` passes (run as `luajit tests/run.lua`; also `lovec . --test`)
+- [x] Criteria 1, 2, 3, 10 proven by tests
 - [ ] Review with human
 
 ## Phase 2: Countdown
