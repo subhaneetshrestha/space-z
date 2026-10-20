@@ -15,6 +15,9 @@ local TWO_PI = 2 * pi
 
 local VW, VH = Viewport.VW, Viewport.VH
 
+-- entrance descent: px/s cruise speed, slow-down gain (1/s), and minimum speed
+local ENTER_SPEED, ENTER_K, ENTER_FLOOR = 95, 2.2, 20
+
 -- ------------------------------------------------------------ shared helpers
 
 local function spawnEbullet(world, x, y, vx, vy, damage)
@@ -77,6 +80,7 @@ function M.spawn(world, bossId)
   e.rot = 0
   e.scale = def.scale or 1
   e.t = 0
+  e.bt = 0 -- behavior clock: starts at arrival so sin() positions begin at 0
   e.dead = false
   e.maxhp = def.hp
   e.hp = def.hp
@@ -103,7 +107,7 @@ behaviors.kessler = {
   end,
   update = function(world, e, dt, phase2)
     e.rot = e.rot + (phase2 and 0.6 or 0.35) * dt
-    e.x = VW * 0.5 + sin(e.t * (phase2 and 1.1 or 0.7)) * (VW * 0.5 - 90)
+    e.x = VW * 0.5 + sin(e.bt * (phase2 and 1.1 or 0.7)) * (VW * 0.5 - 90)
 
     e.burstT = e.burstT - dt
     if e.burstT <= 0 then
@@ -128,19 +132,32 @@ behaviors.kessler = {
 
 -- Zone 2 — Mining Leviathan: hovers dropping meteors, telegraphs, then drills
 -- straight down at the player's column and grinds back up.
+local HOVER_BLEND = 0.6 -- s to ease from the post-dive pose back onto the hover path
+
+local function hoverPos(bt)
+  return VW * 0.5 + sin(bt * 0.8) * 130, 170 + sin(bt * 2.1) * 8
+end
+
 behaviors.leviathan = {
   arenaY = 170,
   init = function(e)
     e.state, e.stateT, e.meteorT = "hover", 4, 2.2
     e.baseX = e.x
+    e.hoverOffX, e.hoverOffY, e.hoverT = 0, 0, HOVER_BLEND
   end,
   update = function(world, e, dt, phase2)
     local player = world.player
     e.stateT = e.stateT - dt
 
     if e.state == "hover" then
-      e.x = VW * 0.5 + sin(e.t * 0.8) * 130
-      e.y = 170 + sin(e.t * 2.1) * 8
+      -- the hover path is absolute, so after a dive carry the leftover offset
+      -- and let it fade out instead of snapping onto the path
+      local hx, hy = hoverPos(e.bt)
+      e.hoverT = e.hoverT + dt
+      local k = e.hoverT / HOVER_BLEND
+      k = k >= 1 and 1 or k * k * (3 - 2 * k)
+      e.x = hx + e.hoverOffX * (1 - k)
+      e.y = hy + e.hoverOffY * (1 - k)
       e.meteorT = e.meteorT - dt
       if e.meteorT <= 0 then
         e.meteorT = e.meteorT + (phase2 and 1.5 or 2.2)
@@ -177,6 +194,8 @@ behaviors.leviathan = {
       if e.y <= 170 then
         e.y = 170
         e.state, e.stateT = "hover", phase2 and 2.5 or 4
+        local hx, hy = hoverPos(e.bt)
+        e.hoverOffX, e.hoverOffY, e.hoverT = e.x - hx, e.y - hy, 0
       end
     end
   end,
@@ -190,7 +209,7 @@ behaviors.warmachine = {
     e.shotT, e.spiralA, e.fanShots = 0, 0, 0
   end,
   update = function(world, e, dt, phase2)
-    e.x = VW * 0.5 + sin(e.t * 0.9) * 120
+    e.x = VW * 0.5 + sin(e.bt * 0.9) * 120
     e.stateT = e.stateT - dt
     e.shotT = e.shotT - dt
 
@@ -229,7 +248,7 @@ behaviors.titan = {
   end,
   update = function(world, e, dt, phase2)
     e.rot = e.rot + (phase2 and 0.9 or 0.4) * dt
-    e.x = VW * 0.5 + sin(e.t * 0.55) * 150
+    e.x = VW * 0.5 + sin(e.bt * 0.55) * 150
 
     e.burstT = e.burstT - dt
     if e.burstT <= 0 then
@@ -255,7 +274,7 @@ behaviors.storm = {
     e.dashes = 0
   end,
   update = function(world, e, dt, phase2)
-    e.y = 180 + sin(e.t * 1.6) * 22
+    e.y = 180 + sin(e.bt * 1.6) * 22
     e.stateT = e.stateT - dt
 
     if e.state == "drift" then
@@ -303,7 +322,7 @@ behaviors.guardian = {
     e.wallT, e.fanT, e.wallFlip = 2.2, 1.5, false
   end,
   update = function(world, e, dt, phase2)
-    e.x = VW * 0.5 + sin(e.t * 0.5) * 170
+    e.x = VW * 0.5 + sin(e.bt * 0.5) * 170
 
     e.wallT = e.wallT - dt
     if e.wallT <= 0 then
@@ -340,8 +359,8 @@ behaviors.overlord = {
   end,
   update = function(world, e, dt, phase2)
     local third = e.hp / e.maxhp
-    e.x = VW * 0.5 + sin(e.t * (third < 1 / 3 and 1.0 or 0.6)) * 140
-    e.rot = sin(e.t * 0.8) * 0.15
+    e.x = VW * 0.5 + sin(e.bt * (third < 1 / 3 and 1.0 or 0.6)) * 140
+    e.rot = sin(e.bt * 0.8) * 0.15
 
     if third > 2 / 3 then
       e.fanT = e.fanT - dt
@@ -413,15 +432,22 @@ function M.update(world, dt)
   end
 
   if e.entering then
-    e.y = e.y + 95 * dt
+    -- cruise at ENTER_SPEED, then slow in proportion to the distance left; the
+    -- floor keeps it from stalling short of the arena
+    local speed = (b.arenaY - e.y) * ENTER_K
+    if speed > ENTER_SPEED then speed = ENTER_SPEED
+    elseif speed < ENTER_FLOOR then speed = ENTER_FLOOR end
+    e.y = e.y + speed * dt
     if e.y >= b.arenaY then
       e.y = b.arenaY
       e.entering = false
+      e.bt = 0
       b.init(e)
     end
     return
   end
 
+  e.bt = e.bt + dt
   local phase2 = e.hp < e.maxhp * 0.5
   if phase2 and e.bossPhase == 1 then e.bossPhase = 2 end
   b.update(world, e, dt, phase2)
