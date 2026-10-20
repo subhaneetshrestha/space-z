@@ -6,7 +6,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 
 ## Phase 0: Learn what LÖVE 12 breaks
 
-- [ ] **B1: Get a LÖVE 12 desktop build and record what fails**
+- [x] **B1: Get a LÖVE 12 desktop build and record what fails** (findings: `love12-findings.md`; the only failure is the compatibility dialog from `t.version = "11.5"`, plus one deprecation warning)
   - Description: Download the `love2d/love` Actions artifact (Windows x64) for the current `main` commit with `gh`, unpack it to `dist/love12/` (gitignored), and run `lovec . --test` and `lovec . --smoke` on it. Add `build/get-love.ps1` that does the download for a given commit, so CI and local use share it. Write the findings (errors, warnings, the compatibility dialog) to `docs/enemy-state-save/love12-findings.md`. No game code changes here.
   - Acceptance:
     - [ ] `build/get-love.ps1 -Commit <sha> -Out dist/love12` produces a runnable `lovec.exe` that reports version 12.0.
