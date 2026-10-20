@@ -49,7 +49,7 @@ Plan: `tasks/plan.md`. Spec: `SPEC.md`. Tests: `lua tests/run.lua`. Work on a br
 
 ## Phase 2: Boss music
 
-- [ ] **Task 4: Boss theme can be built in time slices**
+- [x] **Task 4: Boss theme can be built in time slices**
   - Description: Turn the theme generator into a resumable job. Add `Music.prewarm(key, zoneIndex)`, `Music.pump(budgetSeconds)`, and make `Music.play` use the cached source or finish an unfinished job synchronously. Same seed, same notes, same output.
   - Acceptance:
     - [ ] A job advanced in small slices produces a sample buffer identical to the one-shot result for the same theme and seed.

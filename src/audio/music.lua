@@ -43,7 +43,9 @@ local function degreeToSemis(deg)
   return SCALE[idx] + oct * 12
 end
 
-local function generate(theme, seed)
+-- `tick` is called after each unit of work (a note, a block of samples); a job
+-- uses it to pause between units. Every resume does at least one unit.
+local function generate(theme, seed, tick)
   local rng = RNG.new(seed)
   local spb = 60 / theme.tempo          -- seconds per beat
   local eighth = spb / 2
@@ -63,6 +65,7 @@ local function generate(theme, seed)
     if s % 2 == 1 and rng:chance(0.3) then note = root + 12 end
     write(buf, RATE, floor(s * eighth * RATE), eighth * 0.85,
       midi(note), "square", 0.16, 0.5)
+    tick()
   end
 
   -- lead: seeded random walk over two octaves of the scale; rests keep it airy
@@ -81,6 +84,7 @@ local function generate(theme, seed)
     else
       s = s + 1
     end
+    tick()
   end
 
   -- hats on every 8th (accented off-beats), kick on 1/3, snare on 2/4
@@ -96,6 +100,7 @@ local function generate(theme, seed)
         write(buf, RATE, startS, 0.07, 1800, "noise", 0.14)
       end
     end
+    tick()
   end
 
   local sd = love.sound.newSoundData(n, RATE, 16, 1)
@@ -103,6 +108,7 @@ local function generate(theme, seed)
     local v = (buf[i] or 0)
     if v > 1 then v = 1 elseif v < -1 then v = -1 end
     sd:setSample(i, v)
+    if i % 4096 == 4095 then tick() end
   end
   local src = love.audio.newSource(sd, "static")
   src:setLooping(true)
@@ -121,9 +127,61 @@ local function enabled()
   return Save.data().settings.sound ~= false
 end
 
+local function cacheKeyFor(key, zoneIndex)
+  return key .. (key == "zone" and ("_" .. (zoneIndex or 1)) or "")
+end
+
+-- A build that can be paused: generate() runs inside a coroutine and yields from
+-- tick() once the current slice's time budget is spent.
+local pending = {} -- cacheKey -> job being built ahead of its first play
+
+local function newJob(theme, seed)
+  local job = { done = false, deadline = math.huge }
+  local function tick()
+    if os.clock() >= job.deadline then coroutine.yield() end
+  end
+  job.co = coroutine.create(function()
+    job.src = generate(theme, seed, tick)
+    job.done = true
+  end)
+  return job
+end
+
+-- budget in seconds of CPU time; nil runs the job to completion
+local function advance(job, budget)
+  if job.done then return true end
+  job.deadline = budget and (os.clock() + budget) or math.huge
+  local ok, err = coroutine.resume(job.co)
+  if not ok then error(err, 0) end
+  return job.done
+end
+
+-- Start building a theme without playing it, so a later play() finds it ready.
+-- Drive it with Music.pump() from the frame loop. No-op if sound is off or the
+-- theme is already built or being built.
+function M.prewarm(key, zoneIndex)
+  local cacheKey = cacheKeyFor(key, zoneIndex)
+  if cache[cacheKey] or pending[cacheKey] or not enabled() then return end
+  local theme, seed = themeFor(key, zoneIndex)
+  pending[cacheKey] = newJob(theme, seed)
+end
+
+-- Advance the pending build by up to `budget` seconds. Returns true while work
+-- remains, false when idle.
+function M.pump(budget)
+  local cacheKey, job = next(pending)
+  if not job then return false end
+  if advance(job, budget) then
+    cache[cacheKey] = job.src
+    pending[cacheKey] = nil
+    return next(pending) ~= nil
+  end
+  return true
+end
+
 -- Music.play("menu") / Music.play("zone", zoneIndex) / Music.play("boss", zoneIndex)
 function M.play(key, zoneIndex)
-  local cacheKey = key .. (key == "zone" and ("_" .. (zoneIndex or 1)) or "")
+  local cacheKey = cacheKeyFor(key, zoneIndex)
   if currentKey == cacheKey and current and current:isPlaying() then return end
   M.stop()
   if not enabled() then
@@ -132,8 +190,15 @@ function M.play(key, zoneIndex)
   end
   local src = cache[cacheKey]
   if not src then
-    local theme, seed = themeFor(key, zoneIndex)
-    src = generate(theme, seed)
+    -- not prewarmed (or only partly): finish the build right here
+    local job = pending[cacheKey]
+    if not job then
+      local theme, seed = themeFor(key, zoneIndex)
+      job = newJob(theme, seed)
+    end
+    advance(job, nil)
+    pending[cacheKey] = nil
+    src = job.src
     cache[cacheKey] = src
   end
   current = src
