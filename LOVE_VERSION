@@ -1,0 +1,10 @@
+# The LÖVE the game is built and tested against. Single source of truth: conf.lua,
+# build/*.ps1, the CI workflow and the docs read it or point here. To move to a newer
+# LÖVE, see "Moving to a newer LÖVE" in docs/BUILD.md.
+#
+# love            MAJOR.MINOR that conf.lua declares (t.version); must match the runtime
+# love_commit     love2d/love commit whose CI artifacts are the desktop build (build/get-love.ps1)
+# love_android_commit  love2d/love-android commit the APK is built from (set when Android is pinned)
+love=12.0
+love_commit=b7daef0f7c1dc5888090f5d5b22d4eaf4ffd1d87
+love_android_commit=

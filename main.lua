@@ -2,6 +2,7 @@
 -- headless-ish harness modes:  love . --test  |  love . --smoke
 local StateM = require("src.core.state")
 local Viewport = require("src.core.viewport")
+local Compat = require("src.compat")
 
 local STEP = 1 / 60
 local MIN_STEP = 1 / 240 -- sub-steps below this carry to the next frame instead
@@ -260,7 +261,7 @@ function love.load(args)
       lg.setBlendMode("alpha")
       lg.setCanvas()
       lg.pop()
-      local data = canvas:newImageData()
+      local data = Compat.readbackImageData(canvas, lg)
       data:encode("png", "icon_" .. size .. ".png")
       print("[icons] wrote icon_" .. size .. ".png (save dir)")
       data:release()

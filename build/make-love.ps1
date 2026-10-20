@@ -12,7 +12,8 @@ $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
   New-Item -ItemType Directory -Force "dist" | Out-Null
-  $items = @("conf.lua", "main.lua", "src", "lib")
+  # LOVE_VERSION is read by conf.lua at startup, so it ships inside the package
+  $items = @("conf.lua", "main.lua", "LOVE_VERSION", "src", "lib")
   if ($IncludeTests) { $items += "tests" }
 
   $zip = "dist/space-z.zip"

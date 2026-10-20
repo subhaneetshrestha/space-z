@@ -29,6 +29,7 @@ function t.near(a, b, eps, msg)
 end
 
 local FILES = {
+  "tests.test_version",
   "tests.test_rng",
   "tests.test_pool",
   "tests.test_json",

@@ -21,7 +21,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 
 ## Phase 1: Version foundation
 
-- [ ] **B2: `LOVE_VERSION`, `conf.lua`, compat fixes**
+- [x] **B2: `LOVE_VERSION`, `conf.lua`, compat fixes** (verified on the LÖVE 12 build: `--test` 283/0, `--smoke` OK, no dialog, no warnings; a packaged `.love` declaring 11.5 hangs on the dialog, so the file is read from inside the archive. Android dialog is checked in B5.)
   - Description: Add `LOVE_VERSION` (`love=12.0`, `love_commit=`, `love_android_commit=`). `conf.lua` reads it through a small parser so `t.version` matches the runtime. Fix whatever B1 found, with any API difference behind a single `src/compat.lua`. Include `LOVE_VERSION` in `make-love.ps1`'s package list so the `.love` can read it.
   - Acceptance:
     - [ ] Criterion 10 (partial): `lovec . --test` and `--smoke` pass on the LÖVE 12 build.
