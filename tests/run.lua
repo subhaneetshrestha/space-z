@@ -30,6 +30,7 @@ end
 
 local FILES = {
   "tests.test_version",
+  "tests.test_build_config",
   "tests.test_rng",
   "tests.test_pool",
   "tests.test_json",

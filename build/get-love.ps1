@@ -1,33 +1,48 @@
 # build/get-love.ps1 — fetch a LÖVE build from love2d/love's CI artifacts.
 #
-#   pwsh build/get-love.ps1 -Commit b7daef0f7c1dc5888090f5d5b22d4eaf4ffd1d87 -Out dist/love12
-#   pwsh build/get-love.ps1 -Commit latest                  # newest green run on main
-#   pwsh build/get-love.ps1 -Commit <sha> -Artifact love-linux-X64.AppImage -Out dist/love12-linux
+#   pwsh build/get-love.ps1                              # the commit pinned in LOVE_VERSION -> dist/love12
+#   pwsh build/get-love.ps1 -Commit <sha> -Out <dir>     # a specific commit
+#   pwsh build/get-love.ps1 -Commit latest               # newest green run on main (to pick a new pin)
+#   pwsh build/get-love.ps1 -Artifact love-linux-X64.AppImage -Out dist/love12-linux
+#   pwsh build/get-love.ps1 -Force                       # fetch again even if -Out already holds the commit
 #
 # LÖVE 12 has no release tag yet, so its desktop builds only exist as GitHub Actions
 # artifacts of the `continuous-integration` workflow. The artifact for the commit is
 # downloaded with the GitHub CLI (`gh auth login` once locally; CI sets GH_TOKEN) and
-# unpacked into -Out. Artifacts expire (about 90 days), so a missing one is reported
+# unpacked into -Out, with the commit written to -Out/COMMIT so a later run can tell
+# what the folder holds. Artifacts expire (about 90 days), so a missing one is reported
 # with the commit that was asked for instead of silently falling back to another.
 #
 # Prerequisites: gh (https://cli.github.com), logged in.
 param(
-  [Parameter(Mandatory = $true)][string]$Commit,
+  [string]$Commit,
   [string]$Out = "dist/love12",
   [string]$Artifact = "love-windows-x64",
-  [string]$Repo = "love2d/love"
+  [string]$Repo = "love2d/love",
+  [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+  . "$PSScriptRoot/love-version.ps1"
+  if (-not $Commit) { $Commit = (Get-LoveVersion)["love_commit"] }
+
+  # already fetched: the folder says which commit it holds
+  if (-not $Force -and $Commit -ne "latest" -and (Test-Path "$Out/COMMIT") -and (Test-Path "$Out/love.exe")) {
+    if ((Get-Content "$Out/COMMIT" -Raw).Trim() -eq $Commit) {
+      Write-Host "OK: $Out already holds commit $Commit"
+      return
+    }
+  }
+
   if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw "gh (GitHub CLI) not found — https://cli.github.com, then 'gh auth login'"
   }
 
   $workflow = gh api "repos/$Repo/actions/workflows/main.yml" --jq .id
-  if ($LASTEXITCODE -ne 0) { throw "could not look up the $Repo workflow (is gh logged in?)" }
+  if ($LASTEXITCODE -ne 0) { throw "could not look up the $Repo workflow (is gh logged in, or GH_TOKEN set?)" }
 
   if ($Commit -eq "latest") {
     $query = "branch=main&status=success&per_page=1"

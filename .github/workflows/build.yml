@@ -105,17 +105,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download LÖVE 11.5 (win64)
-        run: |
-          curl -fsSL -o love-win64.zip \
-            https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip
-          unzip -q love-win64.zip
+      # LÖVE 12 has no release yet: its Windows build is an artifact of love2d/love's own CI,
+      # for the commit pinned in LOVE_VERSION. Cached on that file, so a run only refetches
+      # when the pin changes (artifacts expire after about 90 days; the cache keeps the
+      # build as long as it is used at least weekly).
+      - name: Restore pinned LÖVE (win64)
+        id: love
+        uses: actions/cache@v4
+        with:
+          path: dist/love12
+          key: love-windows-x64-${{ hashFiles('LOVE_VERSION') }}
+
+      - name: Fetch pinned LÖVE (win64)
+        if: steps.love.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./build/get-love.ps1
 
       # SpaceZ.exe = love.exe with space-z.love appended; pure byte concatenation,
       # so it cross-builds correctly on Linux
       - name: Fuse exe
         shell: pwsh
-        run: ./build/build-windows.ps1 -LoveDir love-11.5-win64
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./build/build-windows.ps1
 
       - name: Zip distribution folder
         run: |
