@@ -63,7 +63,7 @@ Plan: `tasks/plan.md`. Spec: `SPEC.md`. Tests: `lua tests/run.lua`. Work on a br
   - Files: `src/audio/music.lua`, `tests/test_music.lua` (new), `tests/run.lua`
   - Scope: M (3 files)
 
-- [ ] **Task 5: Prewarm the boss theme during the zone**
+- [x] **Task 5: Prewarm the boss theme during the zone**
   - Description: Start `Music.prewarm("boss", zoneIndex)` when the zone timeline is near its end (`zoneTime >= duration - 25`) and call `Music.pump(0.002)` each game update, so synthesis finishes during the waves and the boss spawn only calls `src.play()`.
   - Acceptance:
     - [ ] Prewarm starts once per run and never during the boss fight.

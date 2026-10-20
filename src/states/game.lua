@@ -41,6 +41,11 @@ local M = {}
 
 local ORANGE = { 1, 0.6, 0.25 }
 
+-- The boss theme is built a sliver per frame during the last PREWARM_LEAD seconds
+-- of a zone, so the boss spawn only has to press play.
+local PREWARM_LEAD = 25
+local MUSIC_PUMP_BUDGET = 0.002 -- seconds of CPU per frame
+
 -- swap-remove entries whose t exceeds life (arcs, beams, pulses, toasts)
 local function ageList(list, dt)
   for i = #list, 1, -1 do
@@ -304,6 +309,10 @@ function M:update(dt)
   Movement.update(world, dt)
   Boss.update(world, dt)
   Spawner.update(world, dt)
+  if world.phase == "waves" and world.zoneTime >= world.zone.duration - PREWARM_LEAD then
+    Music.prewarm("boss", world.zoneIndex)
+  end
+  Music.pump(MUSIC_PUMP_BUDGET)
   Weapons.update(world, dt)
   Collision.update(world, dt)
   Pickups.update(world, dt)
