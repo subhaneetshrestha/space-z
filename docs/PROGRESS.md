@@ -10,7 +10,8 @@
 machine can deliver. The game is content-complete per PLAN.md: 7 zones/bosses, 11 weapons +
 8 evolutions + 11 passives, procedural audio, tech tree, 8 ships, achievements, Black Hole
 mode, quality tiers, tutorial, daily-seed runs, and a scripted build pipeline (the packaged
-`dist/windows/SpaceZ.exe` and `dist/space-z.love` are smoke-verified). 92/92 headless tests.
+`dist/windows/SpaceZ.exe` and `dist/space-z.love` are smoke-verified). 259 headless tests as of
+the run save & Continue feature (the original M0-M5 count was 92).
 
 **Known open items** (need resources this machine lacks — see docs/BUILD.md):
 - Android APK: pipeline fully scripted (`build/build-android.ps1`) but not executed —
@@ -68,6 +69,23 @@ ARCHITECTURE.md in the same change.**
       HUD safe-area inset for notches, docs/BUILD.md (incl. iOS + store checklist)
 
 ## Work log
+
+### 2026-10-20 — Run save & Continue (branch `feature/run-save-resume`)
+- **Feature:** one saved run (`save.run`) with a menu **CONTINUE** row, a 3-2-1 **countdown** after
+  resuming and after pause Resume, and pause row 2 = **SAVE & QUIT**. Spec/plan/tasks:
+  `docs/run-save-resume/`. Run-state snapshot (progression, build, HP, RNG, spawner timers); enemies,
+  bullets and the boss are not saved, so a boss-fight save resumes with the boss re-entering at full HP.
+  Daily runs are not resumable. Autosave every 10 s, plus pause, quit-to-menu, app background
+  (`love.focus(false)`) and `love.quit`. Cleared on death and win. API: ARCHITECTURE.md (runsave.lua).
+- **Verified (desktop):** 259 tests pass (`luajit tests/run.lua` and `lovec . --test`). `lovec . --smoke`
+  gives the identical final line to `main` (t=320s zone=2 level=11 kills=381 distance=37630) and writes no
+  run. Autosave cost, desktop, worst-case full build: snapshot ~0.005 ms, whole-save JSON encode
+  ~0.06-0.14 ms, encode + file write ~0.9 ms (1.15 KB file), once per 10 s.
+- **Not verified:** the look of the countdown overlay, the menu's abandon prompt and the 6-row menu layout
+  (no one has seen them on screen yet); anything on an Android device (backgrounding mid-draft, process
+  kill, flash write time).
+- Test-suite note: `lovec . --test` runs `Save.reset()` against the **real** `save.json` in the save
+  directory (pre-existing in `test_save`; new tests do the same). Back it up first if it matters.
 
 ### 2026-07-19 — Session 4 (Claude): M4 polish + M5 ship pipeline
 - **M4**: hit-stop (`world.freezeT` — sim freezes, drawing continues; 0.15s boss /

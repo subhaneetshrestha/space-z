@@ -121,7 +121,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
 
 ## Phase 4: Ship
 
-- [ ] **Task 9: Verify end to end and open the PR**
+- [x] **Task 9: Verify end to end and open the PR**
   - Description: Run every acceptance criterion from the spec, measure autosave cost, update `docs/ARCHITECTURE.md` and `docs/PROGRESS.md` (check how they are organised first), and open a PR. Do not merge.
   - Acceptance:
     - [ ] Spec criteria 1-12 each checked with a stated result.

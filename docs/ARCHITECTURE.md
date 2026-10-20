@@ -113,6 +113,8 @@ r:range(a, b) -> [a,b)         -- float
 r:chance(p) -> bool            -- p in [0,1]
 r:pick(list) -> element
 r:shuffle(list)                -- in place, Fisher-Yates
+r:getState() -> integer        -- the stream's whole state (one plain number, JSON-safe)
+r:setState(s) -> bool          -- restore it; false + unchanged unless s is an integer in [1, 2^31-2]
 ```
 
 ### pool.lua
@@ -471,9 +473,17 @@ Used when `world.autopilot`; also auto-picks card 1 is handled by levelup state 
 Neon title, starfield behind, "TAP / CLICK / SPACE TO LAUNCH", total Stardust from save,
 sound (`S`) and FX-quality (`Q`) toggle hints (flip the setting, persist via Save). Any
 launch input → `StateM.switch("game", { mode = "standard" })`.
+**CONTINUE:** `enter` reads `Save.run()` into `self.run`; while a valid saved run exists the first
+row is `CONTINUE` (default selection) → `StateM.switch("game", { resume = run, mode = run.mode,
+seed = run.seed })`. With a saved run, LAUNCH / DAILY RUN need two presses on the same row (the first
+arms it: the row reads `ABANDON SAVE? TAP AGAIN`; moving the selection or pressing another row
+disarms). Starting any new run calls `Save.clearRun()`. `M.rows(self)` / `M.label(self, i)` build the
+rows (rebuilt per call: the MODE row's text changes).
 
 ### game.lua — `"game"` (the hub; owns world creation & orchestration)
-`enter(params)`: params `{ mode, seed, autopilot }`. Build world (seed default
+`enter(params)`: params `{ mode, seed, autopilot, daily, resume }`. `resume` (a saved run, validated
+again here; invalid → plain new run) overrides seed/mode/ship; the world is built as for a new run and
+`RunSave.apply` then overwrites its progression, after which `"countdown"` is pushed. Build world (seed default
 `os.time()`), init player from `content/ships.lua` `"pathfinder"` (grants starting weapon via
 Leveling), wire event listeners:
 - `enemy_killed` → `Pickups.dropXp` at enemy pos (value `enemy.xp`), explosion particles, `shake += 1` (cap 10)
@@ -501,7 +511,14 @@ single additive batch for everything glowy is fine on black: order within batch:
 drones, enemies, boss, player (engine trail via particles), bullets, ebullets → draw batch →
 arcs as `love.graphics.line` (additive, 2 passes) → particles (own batch add) → damage-flash
 overlay → HUD. Screenshake: translate by `rng`-jittered `world.shake` before world drawing,
-never applied to HUD. `keypressed "escape"` → push `"pause"`.
+never applied to HUD. `keypressed "escape"` → push `"pause"` with `{ save = Game.saveRun, daily = world.daily }`.
+
+**Run saves.** `Game.saveRun() -> bool` is the single save entry point (autosave, pause, quit,
+`love.focus(false)`, `love.quit`). It does nothing unless the game state is active (`leave()` clears
+`M.active`; `Game.world` outlives the state), and counts an open `levelup` draft back into
+`pendingLevelUps`. `RunSave.snapshot` refuses dead, `over`, daily and autopilot runs. Autosave runs every
+10 s of unpaused play (just before step 12, so a pending level-up is still counted). `player_died` calls
+`Save.clearRun()` immediately; a win clears it in `endRun` just before `Progress.endRun`.
 
 ### levelup.lua — `"levelup"` (translucent overlay)
 `enter({world})`: `offer = Leveling.buildOffer(world)`; dim game 70%; cards animate in (~0.25s).
@@ -509,8 +526,17 @@ Input: click/tap on a card, or keys `1/2/3`, ←/→ + space/enter. On pick:
 `Leveling.apply(world, card)` → `StateM.pop()`. If `world.autopilot`: auto-pick index 1 after 0.3s.
 
 ### pause.lua — `"pause"` (translucent)
-"PAUSED" + Resume / Quit-to-menu rows (tap or ↑↓+enter, esc resumes). Quit → run counts as loss
-(no stardust award — just `StateM.switch("menu")`).
+`enter(params)`: `{ save = fn, daily = bool }` (both optional). "PAUSED" + two rows (tap or ↑↓+enter).
+Resume (row 1, or esc) does `StateM.pop()` then `StateM.push("countdown")`. Row 2 is `SAVE & QUIT`
+for standard / Black Hole runs: opening pause and choosing it both call `save()`, then
+`StateM.switch("menu")`, and the run is continued from the menu. For a daily run (not resumable) it is
+`QUIT TO MENU`: nothing is saved and the run is dropped (no stardust award).
+
+### countdown.lua — `"countdown"` (translucent)
+3-2-1 overlay, one second per digit (`Countdown.digit(t)` → 3, 2, 1, then nil), then `StateM.pop()`.
+No input handlers; because `core/state.lua` updates only the top state, the world below is frozen.
+Pushed after resume-from-save (by `game:enter`) and after pause Resume. The pop triggers
+`game:resume()`, which resets the steering input.
 
 ### gameover.lua — `"gameover"` (translucent over frozen game)
 Shows `VICTORY` (won) or `SHIP LOST`; stats rows: zone reached, level, kills, time, distance,
@@ -649,11 +675,32 @@ Save.load() -> data      -- read "save.json" via love.filesystem (or defaults); 
 Save.data() -> data      -- cached table (load() memoizes)
 Save.write()             -- serialize cached data
 Save.reset()
+Save.run() -> run|nil    -- the saved in-progress run, only if it passes RunSave.validate
+Save.setRun(run) -> ok   -- store + write
+Save.clearRun()          -- drop it (writes only if there was one)
 -- defaults: { version=1, stardust=0, totalRuns=0, bestDistance=0, bestLevel=0,
---   unlocked={ blackhole=false }, settings={ sound=true, quality="high" } }
+--   unlocked={ blackhole=false }, settings={ sound=true, quality="high" }, run=nil }
 -- load() strips the retired settings.steerMode key from older saves.
 ```
 Headless-safe: if `love.filesystem` is nil (tests), keep data in memory only.
+`run` is optional, so old saves load unchanged and `version` stays 1.
+
+### runsave.lua — snapshot / validate / apply of an in-progress run
+Pure data, no `love.*`. One saved run at a time, under `save.run`.
+```lua
+RunSave.snapshot(world, { draftOpen = bool }) -> run | nil
+RunSave.validate(run) -> bool       -- untrusted input: any bad field means "no save"
+RunSave.apply(world, run) -> bool   -- onto a fresh game:enter world; false = world untouched
+```
+A run holds: `version, mode ("standard"|"blackhole"), seed, ship, time, distance, zoneIndex, zoneTime,
+zoneStartDistance, level, xp, xpNext, pendingLevelUps, kills, bossKills, noDamage, stardustEarned, hp,
+weapons[{id,level}], passives[{id,level}], rng{spawn,drops,cards,misc}, spawnerTimers[{index,value}]`.
+Not saved: enemies, bullets, pickups, drones, particles, the boss, cooldowns and transient timers.
+`snapshot` returns nil for dead / `over` / daily / autopilot runs. Every saved run resumes in phase
+`"waves"`: a `boss`-phase run is rewound to `zoneTime = zone.duration` (the spawner re-spawns the
+boss at full HP once the field is clear); a `warp`-phase run resumes at the start of the next zone
+(nil if that was the last zone). `maxhp` is recomputed by `Leveling.recomputeStats`; `hp` is clamped to
+`[1, maxhp]`. json.lua writes numbers with 14 significant digits, so clocks round-trip within ~1e-14.
 
 ### progress.lua
 `Progress.endRun(world, won) -> summary` — computes stardust per the formula in game.lua §,
@@ -671,7 +718,10 @@ Test files (minimum): `test_rng.lua` (determinism, ranges, shuffle), `test_pool.
 (stat recompute, offer validity: 3 distinct, respects caps/maxLevel), `test_pickups.lua`
 (xp→level curve incl. multi-level), `test_spawner.lua` (wave timeline counts vs simulated time,
 seeded determinism), `test_save.lua` (round-trip encode/decode, defaults, corrupt file → defaults),
-`test_json.lua`. Tests construct minimal fake worlds (plain tables) — systems must not require
+`test_json.lua`, `test_runsave.lua` (snapshot, validation, apply, determinism), `test_countdown.lua`,
+`test_game_resume.lua` / `test_menu_continue.lua` (the real game and menu states over the real state stack,
+with only render/audio modules stubbed; `test_game_resume` also loads `main.lua`'s focus/quit hooks in a
+sandbox), plus `tests/support.lua` (shared helpers; not in `run.lua`'s `FILES`). Tests construct minimal fake worlds (plain tables) — systems must not require
 love APIs at module load time (render/* and ui/* excluded from tests; they may use love freely.
 `core/util.lua` guards its font cache behind `love ~= nil`).
 
