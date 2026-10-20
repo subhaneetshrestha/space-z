@@ -47,7 +47,7 @@ Plan: `docs/run-save-resume/plan.md`. Spec: `docs/run-save-resume/spec.md`. Test
 
 ## Phase 2: Countdown
 
-- [ ] **Task 4: 3-2-1 countdown state, used by pause RESUME**
+- [x] **Task 4: 3-2-1 countdown state, used by pause RESUME** (look of the overlay not yet seen on screen: needs a manual `love .` check)
   - Description: New translucent `countdown` state (drawn over the game, big centered 3, 2, 1, one second each, then pops). Register it in `main.lua`. Pause's RESUME and Esc now `pop()` then `push("countdown")`.
   - Acceptance:
     - [ ] The state ends after 3.0 s +/- one step, shows 3, then 2, then 1, and pops exactly once.

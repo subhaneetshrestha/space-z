@@ -34,6 +34,7 @@ local FILES = {
   "tests.test_json",
   "tests.test_save",
   "tests.test_runsave",
+  "tests.test_countdown",
   "tests.test_damage",
   "tests.test_leveling",
   "tests.test_pickups",

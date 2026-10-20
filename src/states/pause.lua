@@ -23,10 +23,17 @@ function M:enter()
   self.selected = 1
 end
 
+-- Back into the run through a 3-2-1, so unpausing never drops the player into
+-- live danger. pop() runs game:resume() first; the countdown's own pop does again.
+local function resumeRun()
+  StateM.pop()
+  StateM.push("countdown")
+end
+
 local function activate(self, i)
   Audio.play("confirm")
   if i == 1 then
-    StateM.pop()
+    resumeRun()
   else
     StateM.switch("menu")
   end
@@ -57,7 +64,7 @@ end
 
 function M:keypressed(key)
   if key == "escape" then
-    StateM.pop()
+    resumeRun()
   elseif key == "up" or key == "w" then
     self.selected = self.selected > 1 and self.selected - 1 or #ROWS
   elseif key == "down" or key == "s" then
