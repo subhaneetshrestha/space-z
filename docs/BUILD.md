@@ -181,8 +181,8 @@ about 11 minutes). `-PrepareOnly` stops before Gradle, to check the pin and the 
 > `love_commit` (it is currently **older**: love-android has not updated its LÖVE submodule). (2) LÖVE 12
 > prefers its Vulkan renderer on Android, and on the Android **emulator** that crashed inside the
 > emulator's own Vulkan driver before any game code ran (a null pointer in
-> `vkSetDebugUtilsObjectNameEXT`). Forcing OpenGL ES (`t.renderers = { "opengl" }` in `conf.lua`,
-> tried as an experiment and not kept) ran fine. Real phones have real Vulkan drivers and the earlier APK
+> `vkSetDebugUtilsObjectNameEXT`). Forcing OpenGL ES (`t.graphics.renderers = { "opengl" }` in `conf.lua`,
+> tried as an experiment and not kept; `conf.lua` sets it for Windows only, see `docs/enemy-state-save/love12-findings.md`) ran fine. Real phones have real Vulkan drivers and the earlier APK
 > ran on one, but if a device crashes at startup, that is the first thing to try.
 
 ## Moving to a newer LÖVE
