@@ -21,6 +21,31 @@ function T.defaults_shape(t)
   t.eq(d.version, 1, "no schema bump")
 end
 
+-- In the browser build (love.js) love.filesystem.read of a file that does not exist raises
+-- a fatal error, even inside pcall, and a first visit has neither file. So loading may only
+-- read what getInfo says is there. (Found by running the web build in Edge, 2026-10-21.)
+function T.a_first_launch_reads_no_file_that_is_not_there(t)
+  Support.withMemoryFs(function(fs)
+    local data = Save.load()
+    t.eq(Save.rawRun(), nil)
+    t.eq(fs.missingReads, 0, "no read of a missing save.json or run.json")
+    t.eq(data.stardust, 0, "and the defaults are in place")
+  end)
+end
+
+function T.a_launch_with_a_save_but_no_run_reads_only_the_save(t)
+  Support.withMemoryFs(function(fs)
+    Save.reset()
+    Save.data().stardust = 12
+    Save.write()
+    Save.clearRun()
+    local data = Save.load()
+    t.eq(Save.rawRun(), nil)
+    t.eq(fs.missingReads, 0, "run.json is not read when it is not there")
+    t.eq(data.stardust, 12, "the file that is there is still read")
+  end)
+end
+
 -- ------------------------------------------------------- the run's own file
 -- The saved run lives in run.json, never in save.json: it is rewritten every
 -- ~10 s, and a torn write of save.json would wipe permanent progress.

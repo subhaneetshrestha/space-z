@@ -11,7 +11,7 @@ local PAD = 4        -- padding between atlas cells (>= 4 per contract)
 local ATLAS_W = 1024
 
 local sprites = {}   -- name -> { quad, w, h, ox, oy, info }
-local atlasImage     -- plain Image (canvas converted via newImageData)
+local atlasImage     -- straight-alpha atlas texture (Compat.atlasTexture)
 local atlasH = 0
 
 -- palette (neon hues)
@@ -659,12 +659,7 @@ function M.build()
   lg.setCanvas()
   lg.pop()
 
-  local data = Compat.readbackImageData(canvas, lg)
-  data:mapPixel(unpremultiply)
-  atlasImage = lg.newImage(data)
-  atlasImage:setFilter("linear", "linear")
-  data:release()
-  canvas:release()
+  atlasImage = Compat.atlasTexture(canvas, lg, Compat.isWeb(), unpremultiply)
 
   for i = 1, #defs do
     local d = defs[i]

@@ -241,6 +241,17 @@ Needs Node.js (e.g. `volta install node`); the converter is npm-installed into
   without COOP/COEP headers. Trade-off: audio runs on the main thread (may crackle).
 - Test locally with `pwsh build/build-web.ps1 -Serve` → http://localhost:8080
   (a plain `file://` open does NOT work — wasm must be served over HTTP).
+- **Check it in a browser** (Edge, Node 22+): with the site served, `node build/check-web.mjs`
+  loads it, clicks LAUNCH and fails on a fatal dialog, an uncaught error, a page that stops
+  drawing, or an empty playfield. It exists because two browser-only problems got past
+  the headless suite, found when the build was first opened in Edge (2026-10-21):
+  - `love.filesystem.read` of a file that does not exist raises a fatal error in love.js (even
+    inside `pcall`), and a first visit has no `save.json`: the game died before its first
+    frame. Loading now asks `getInfo` first (`Compat.readFile`).
+  - WebGL 1 returns all zeros from `Canvas:newImageData`, so the sprite atlas was empty and no
+    ship, enemy or bullet was drawn. In the browser the atlas is un-premultiplied by a shader
+    instead of a readback (`Compat.atlasTexture`); other platforms are unchanged.
+  Run it after any change to loading, saving or the sprite atlas, and before publishing.
 - To publish: upload the contents of `dist/web` anywhere static (itch.io "HTML" project,
   GitHub Pages, Netlify, ...).
 
