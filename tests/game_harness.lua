@@ -15,13 +15,22 @@ local H = {}
 local STEP = 1 / 60
 H.STEP = STEP
 
+-- Music has no sound device here, but a test can still ask what the game told it to
+-- do: H.music is the list of { "play", key, zone } / { "stop" } calls since setup().
+H.music = {}
+local musicStub = setmetatable({}, {
+  __index = function(_, name)
+    return function(...) H.music[#H.music + 1] = { name, ... } end
+  end,
+})
+
 local STUBS = {
   ["src.render.sprites"] = { batch = function() return Support.catchAll() end, add = Support.noop },
   ["src.render.starfield"] = { new = function() return Support.catchAll() end },
   ["src.render.particles"] = true,
   ["src.render.hud"] = true,
   ["src.audio.audio"] = true,
-  ["src.audio.music"] = true,
+  ["src.audio.music"] = musicStub,
 }
 
 local gameoverParams
@@ -45,6 +54,7 @@ function H.setup()
   StateM.register("gameover", { enter = function(_, p) gameoverParams = p end })
   StateM.register("menu", {})
   gameoverParams = nil
+  H.music = {}
   Save.reset()
 end
 
@@ -88,6 +98,48 @@ function H.played(ship)
   w.level, w.xp, w.xpNext, w.kills, w.noDamage = 6, 14.5, 40, 40, false
   w.player.hp = 37.5
   return w
+end
+
+-- Keep playing (through the state stack) until pred() holds or `limit` frames pass.
+function H.stepUntil(pred, limit)
+  for _ = 1, limit or 900 do
+    if pred() then return true end
+    H.step(1)
+  end
+  return pred()
+end
+
+-- The boss fight of a zone: the real spawner brings the boss in and the run is played on
+-- until it is past its entrance. Weapons are silenced so nothing hurts it, and the ship
+-- cannot die. Returns the world.
+function H.bossFight(zoneIndex)
+  local Zones = require("src.content.zones")
+  local w = H.start({ seed = 700 + zoneIndex })
+  for i = 1, #w.weapons do w.weapons[i].cooldown = 3000 end
+  w.zoneIndex, w.zone = zoneIndex, Zones[zoneIndex]
+  -- exactly the end of the timeline: no wave stream spawns another enemy first, so the
+  -- field is clear and the boss comes in on the next frame
+  w.zoneTime = w.zone.duration
+  w.spawnerState = { timers = {} }
+  H.stepUntil(function() return w.phase == "boss" end, 600)
+  H.stepUntil(function() return w.boss and not w.boss.entering and w.boss.bt >= 3 end, 1800)
+  return w
+end
+
+-- kill the boss of the current fight the way a player would: through the damage system,
+-- so the boss_killed event starts the warp
+function H.killBoss(w)
+  w.boss.hp = 1
+  require("src.systems.damage").direct(w, w.boss, 1e9, false)
+end
+
+-- A copy of the run resumed through the real game:enter, beside the original (which is
+-- H.Game itself). Both can then be stepped with the same call and compared.
+function H.resumeTwin(run)
+  local twin = setmetatable({}, { __index = H.Game })
+  twin:enter({ resume = run, seed = run.seed })
+  while StateM.current() ~= H.Game do StateM.pop() end -- drop the 3-2-1
+  return twin
 end
 
 -- name of the state on top of the stack

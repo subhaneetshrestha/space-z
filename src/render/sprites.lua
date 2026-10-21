@@ -1,6 +1,8 @@
 -- src/render/sprites.lua — procedural neon-vector sprite atlas, built once at load.
 -- Every sprite is stroked 3 times (wide faint / medium / near-white core) so the
 -- glow is baked into the texture; runtime rendering is plain batched quads.
+local Compat = require("src.compat")
+
 local M = {}
 
 local lg = love and love.graphics
@@ -657,7 +659,7 @@ function M.build()
   lg.setCanvas()
   lg.pop()
 
-  local data = canvas:newImageData()
+  local data = Compat.readbackImageData(canvas, lg)
   data:mapPixel(unpremultiply)
   atlasImage = lg.newImage(data)
   atlasImage:setFilter("linear", "linear")

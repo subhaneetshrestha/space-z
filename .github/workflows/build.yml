@@ -10,7 +10,8 @@ name: build
 # all three attached — permanent, public download links, no GitHub account needed.
 #   MAJOR.MINOR  comes from the VERSION file at the repo root; edit it to move to 1.2, 2.0, ...
 #   BUILD        is the workflow run number, so it increases with every build.
-# Pull requests only run the test suite; nothing is built or published.
+# Pull requests only run the tests (the Lua suite, and the same suite plus a smoke run
+# inside LÖVE 12); nothing is built or published.
 #
 # Build logic lives in build/*.ps1 (the same scripts used locally on Windows); the
 # runners execute them with pwsh, which is preinstalled on GitHub's ubuntu images.
@@ -43,9 +44,105 @@ jobs:
       - name: Run test suite
         run: lua5.1 tests/run.lua
 
+  # The suite above never touches LÖVE. This runs the same suite, and a full smoke run that
+  # really renders (sprite atlas, batches, screenshots), inside the LÖVE 12 pinned in
+  # LOVE_VERSION, so a LÖVE problem fails the build instead of showing up on a phone.
+  #
+  # A runner has no GPU, so OpenGL comes from Mesa's software renderer (llvmpipe), the
+  # recipe LÖVE's own CI uses on Windows. Mesa is a prebuilt third-party download, pinned
+  # by version and sha256 and verified before use; its three OpenGL DLLs are copied beside
+  # lovec.exe, which loads them instead of the system OpenGL for that program only.
+  # GALLIUM_DRIVER forces llvmpipe, and --renderers forces OpenGL (LÖVE 12 would otherwise
+  # pick Vulkan or D3D), so the result does not depend on what a runner happens to have.
+  engine:
+    name: engine tests (LÖVE 12)
+    runs-on: windows-latest
+    env:
+      MESA_URL: https://github.com/pal1000/mesa-dist-win/releases/download/24.2.4/mesa3d-24.2.4-release-msvc.7z
+      MESA_SHA256: E3919DE795BEE231EDC88E9C996F2C1851250DFF3BC9B51B9121760AE2250DB0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore pinned LÖVE (win64)
+        id: love
+        uses: actions/cache@v4
+        with:
+          path: dist/love12
+          key: love-windows-x64-${{ hashFiles('LOVE_VERSION') }}
+
+      - name: Fetch pinned LÖVE (win64)
+        if: steps.love.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./build/get-love.ps1
+
+      # only the three DLLs OpenGL needs are kept (the archive is 650 MB unpacked)
+      - name: Restore Mesa software OpenGL
+        id: mesa
+        uses: actions/cache@v4
+        with:
+          path: dist/mesa
+          key: mesa-gl-${{ env.MESA_SHA256 }}
+
+      - name: Fetch Mesa software OpenGL
+        if: steps.mesa.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl.exe -sSL --fail -o mesa.7z $env:MESA_URL
+          if ($LASTEXITCODE -ne 0) { throw "could not download Mesa" }
+          $actual = (Get-FileHash mesa.7z -Algorithm SHA256).Hash
+          if ($actual -ne $env:MESA_SHA256) { throw "Mesa checksum mismatch: got $actual, pinned $env:MESA_SHA256" }
+          7z x mesa.7z -omesa x64/opengl32.dll x64/libgallium_wgl.dll x64/libglapi.dll -y
+          if ($LASTEXITCODE -ne 0) { throw "could not unpack Mesa" }
+          New-Item -ItemType Directory -Force dist/mesa | Out-Null
+          Copy-Item mesa/x64/opengl32.dll, mesa/x64/libgallium_wgl.dll, mesa/x64/libglapi.dll dist/mesa
+
+      # In a copy of the LÖVE folder, never in dist/love12 itself: that folder is cached under
+      # a key the windows job shares, and build-windows.ps1 ships every DLL in it, so Mesa's
+      # OpenGL would end up in a release.
+      - name: Put the software OpenGL beside lovec.exe
+        shell: pwsh
+        run: |
+          Copy-Item dist/love12 dist/engine -Recurse
+          Copy-Item dist/mesa/*.dll dist/engine
+
+      # lovec.exe prints to the console and exits non-zero when a test fails
+      - name: Run the suite inside LÖVE
+        shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          & dist/engine/lovec.exe . --test --renderers opengl 2>&1 | Tee-Object -Variable out
+          $code = $LASTEXITCODE
+          if (-not ($out -match "llvmpipe")) { throw "the suite did not run on Mesa's llvmpipe renderer (see the [renderer] line above)" }
+          if ($code -ne 0) { throw "the suite failed inside LÖVE (exit code $code)" }
+
+      # a full simulated run with real rendering; exit code 1 on any error
+      - name: Smoke run inside LÖVE
+        shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          & dist/engine/lovec.exe . --smoke --renderers opengl 2>&1 | Tee-Object -Variable out
+          $code = $LASTEXITCODE
+          $dir = Join-Path $env:APPDATA "LOVE/space-z"
+          if (Test-Path "$dir/smoke_report.txt") { Get-Content "$dir/smoke_report.txt" }
+          if ($code -ne 0) { throw "the smoke run failed inside LÖVE (exit code $code)" }
+
+      - name: Keep the smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: |
+            ~/AppData/Roaming/LOVE/space-z/smoke_*.png
+            ~/AppData/Roaming/LOVE/space-z/smoke_report.txt
+          if-no-files-found: ignore
+
   version:
     name: resolve version
-    needs: test
+    needs: [test, engine]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -105,17 +202,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download LÖVE 11.5 (win64)
-        run: |
-          curl -fsSL -o love-win64.zip \
-            https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip
-          unzip -q love-win64.zip
+      # LÖVE 12 has no release yet: its Windows build is an artifact of love2d/love's own CI,
+      # for the commit pinned in LOVE_VERSION. Cached on that file, so a run only refetches
+      # when the pin changes (artifacts expire after about 90 days; the cache keeps the
+      # build as long as it is used at least weekly).
+      - name: Restore pinned LÖVE (win64)
+        id: love
+        uses: actions/cache@v4
+        with:
+          path: dist/love12
+          key: love-windows-x64-${{ hashFiles('LOVE_VERSION') }}
+
+      - name: Fetch pinned LÖVE (win64)
+        if: steps.love.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./build/get-love.ps1
 
       # SpaceZ.exe = love.exe with space-z.love appended; pure byte concatenation,
       # so it cross-builds correctly on Linux
       - name: Fuse exe
         shell: pwsh
-        run: ./build/build-windows.ps1 -LoveDir love-11.5-win64
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./build/build-windows.ps1
 
       - name: Zip distribution folder
         run: |
@@ -142,16 +253,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # build-android.ps1 clones love-android unpinned, so upstream HEAD is what
-      # decides whether cached native objects are still valid.
-      - name: Resolve love-android revision
-        id: upstream
-        run: |
-          set -euo pipefail
-          sha=$(git ls-remote https://github.com/love2d/love-android HEAD | cut -f1)
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "love-android HEAD is $sha"
-
       # Of this job's ~22 min, the clone is 21s and the Gradle download 4s — the
       # rest is CMake/ninja compiling LÖVE + megasource for three ABIs into
       # app/.cxx. So caching ~/.gradle alone bought nothing; the whole love-android
@@ -159,8 +260,10 @@ jobs:
       #   app/.cxx      the object files themselves
       #   .gradle/      Gradle's up-to-date snapshots, or every task re-runs anyway
       #   .git + cpp/   restored together so ninja sees sources OLDER than objects;
-      #                 a fresh clone would give newer mtimes and rebuild the lot
-      # Keyed on upstream HEAD because that is what the native sources come from.
+      #                 a fresh checkout would give newer mtimes and rebuild the lot
+      #                 (build-android.ps1 leaves a tree already at the pin untouched)
+      # Keyed on LOVE_VERSION, which pins the love-android commit the native sources come
+      # from, so the key only changes when the pin does: it no longer follows upstream HEAD.
       # The game itself is not an input here — game.love is copied in later and
       # only invalidates the asset, dex and packaging tasks.
       - name: Restore Android build cache
@@ -171,8 +274,8 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             dist/android-build/love-android
-          key: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-${{ hashFiles('build/build-android.ps1') }}
-          restore-keys: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-
+          key: android-${{ runner.os }}-${{ hashFiles('LOVE_VERSION') }}-${{ hashFiles('build/build-android.ps1') }}
+          restore-keys: android-${{ runner.os }}-${{ hashFiles('LOVE_VERSION') }}-
 
       - name: Build APK
         shell: pwsh
@@ -195,7 +298,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             dist/android-build/love-android
-          key: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-${{ hashFiles('build/build-android.ps1') }}
+          key: android-${{ runner.os }}-${{ hashFiles('LOVE_VERSION') }}-${{ hashFiles('build/build-android.ps1') }}
 
       - uses: actions/upload-artifact@v4
         with:

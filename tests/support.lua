@@ -28,6 +28,105 @@ function M.firstDiff(a, b, path)
   return nil
 end
 
+-- ----------------------------------------------------------------- worldDiff
+-- Plain-data view of everything that decides how a run plays out, and nothing that
+-- is only drawn (particles, arcs, beams, pulses, toasts, shake). Two worlds with
+-- equal views play out identically, so firstDiff over views is the "did the resume
+-- change anything?" check used by the behavioural-identity tests.
+
+local WORLD_SCALARS = {
+  "mode", "seed", "time", "distance", "zoneIndex", "zoneTime", "zoneStartDistance",
+  "phase", "warpT", "level", "xp", "xpNext", "pendingLevelUps", "kills", "bossKills",
+  "noDamage", "stardustEarned", "freezeT", "shieldT", "pulseT", "hpRingT",
+}
+local PLAYER_FIELDS = { "x", "y", "vx", "vy", "hp", "maxhp", "invulnT", "dead" }
+
+-- bookkeeping that only decides when a cache is tidied, never what happens
+local BOOKKEEPING = { hitCdN = true }
+
+-- every number / string / boolean field of an entity; a def is reduced to its id
+local function entityView(e)
+  local v = {}
+  for k, val in pairs(e) do
+    local ty = type(val)
+    if BOOKKEEPING[k] then
+      -- left out
+    elseif ty == "number" or ty == "string" or ty == "boolean" then
+      v[k] = val
+    elseif (k == "def" or k == "bossDef") and type(val) == "table" then
+      v[k] = val.id
+    end
+  end
+  return v
+end
+
+function M.worldView(w)
+  local view = {}
+  for _, k in ipairs(WORLD_SCALARS) do view[k] = w[k] end
+
+  view.player = {}
+  for _, k in ipairs(PLAYER_FIELDS) do view.player[k] = w.player[k] end
+  view.player.ship = w.player.shipDef and w.player.shipDef.id
+
+  view.weapons, view.passives = {}, {}
+  for i, o in ipairs(w.weapons or {}) do
+    view.weapons[i] = { id = o.def.id, level = o.level, cooldown = o.cooldown,
+                        side = o.side, tickT = o.tickT }
+  end
+  for i, o in ipairs(w.passives or {}) do
+    view.passives[i] = { id = o.def.id, level = o.level }
+  end
+
+  view.rng = {}
+  for name, r in pairs(w.rng or {}) do view.rng[name] = r:getState() end
+  view.spawnerTimers = {}
+  for i, v in pairs(w.spawnerState and w.spawnerState.timers or {}) do
+    view.spawnerTimers[i] = v
+  end
+
+  -- Lists keep their order: collision stops at the first hit in list order. Entities
+  -- that point at others (a missile's target, a drone's hit cooldowns, world.boss) are
+  -- compared by the pointed-at enemy's slot, so a lost or wrong link shows up.
+  local slotOf = {}
+  view.enemies = {}
+  for _, e in ipairs(w.enemies or {}) do
+    if not e.dead then
+      view.enemies[#view.enemies + 1] = entityView(e)
+      slotOf[e] = #view.enemies
+    end
+  end
+  view.boss = w.boss and slotOf[w.boss] or nil
+
+  for _, name in ipairs({ "ebullets", "bullets", "pickups", "drones" }) do
+    local list = {}
+    for _, e in ipairs(w[name] or {}) do
+      if not e.dead then
+        local v = entityView(e)
+        if name == "bullets" and e.target then v.targetSlot = slotOf[e.target] end
+        if name == "drones" then
+          -- only cooldowns still running count: an expired one acts like none
+          v.hitCd = {}
+          for enemy, expiry in pairs(e.hitCd or {}) do
+            if slotOf[enemy] and expiry > w.time then v.hitCd[slotOf[enemy]] = expiry end
+          end
+        end
+        list[#list + 1] = v
+      end
+    end
+    view[name] = list
+  end
+  return view
+end
+
+-- Path of the first difference between two worlds' simulation state, or nil.
+-- skip: set of view keys to leave out, for state a task has not started saving yet
+-- (e.g. { ebullets = true }); each task removes what it now covers.
+function M.worldDiff(a, b, skip)
+  local va, vb = M.worldView(a), M.worldView(b)
+  for k in pairs(skip or {}) do va[k], vb[k] = nil, nil end
+  return M.firstDiff(va, vb, "world")
+end
+
 function M.noop() end
 
 -- A table whose every missing key is a no-op function (stands in for a render or
@@ -117,6 +216,20 @@ function M.validRun(over)
     rng = { spawn = 1234, drops = 2345, cards = 3456, misc = 4567 },
     spawnerTimers = {},
   }
+  for k, v in pairs(over or {}) do run[k] = v end
+  return run
+end
+
+-- The same run as a version 2 (exact snapshot) save: player, running timers, weapon
+-- cooldowns, and an empty field.
+function M.validRun2(over)
+  local run = M.validRun({
+    version = 2, phase = "waves", warpT = 0,
+    player = { x = 240, y = 518, vx = 0, vy = 0, invulnT = 0 },
+    timers = { freezeT = 0, shieldT = 0, pulseT = 0, hpRingT = 0 },
+    weapons = { { id = "blaster", level = 2, cooldown = 0.15 } },
+    enemies = {}, bullets = {}, ebullets = {}, pickups = {}, drones = {},
+  })
   for k, v in pairs(over or {}) do run[k] = v end
   return run
 end

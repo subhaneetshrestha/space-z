@@ -2,6 +2,7 @@
 -- headless-ish harness modes:  love . --test  |  love . --smoke
 local StateM = require("src.core.state")
 local Viewport = require("src.core.viewport")
+local Compat = require("src.compat")
 
 local STEP = 1 / 60
 local MIN_STEP = 1 / 240 -- sub-steps below this carry to the next frame instead
@@ -171,8 +172,16 @@ end
 
 -- --------------------------------------------------------------------- boot
 
+-- "OpenGL 4.5 (Mesa llvmpipe ...)": which renderer a headless run really used, so a CI
+-- log can show a green run was on the software renderer it was meant to be on
+local function rendererLine()
+  local name, version, vendor, device = love.graphics.getRendererInfo()
+  return string.format("%s %s | %s | %s", tostring(name), tostring(version), tostring(vendor), tostring(device))
+end
+
 function love.load(args)
   if hasArg(args, "--test") then
+    print("[renderer] " .. rendererLine())
     local ok, run = pcall(require, "tests.run")
     if not ok then
       print("FATAL: could not load tests/run.lua: " .. tostring(run))
@@ -260,7 +269,7 @@ function love.load(args)
       lg.setBlendMode("alpha")
       lg.setCanvas()
       lg.pop()
-      local data = canvas:newImageData()
+      local data = Compat.readbackImageData(canvas, lg)
       data:encode("png", "icon_" .. size .. ".png")
       print("[icons] wrote icon_" .. size .. ".png (save dir)")
       data:release()
@@ -278,6 +287,7 @@ function love.load(args)
       stage = "menu", god = god, lastZone = 1,
       limit = god and SMOKE_LIMIT_GOD or SMOKE_LIMIT,
     }
+    smokeLog("renderer: " .. rendererLine())
     smokeLog("smoke run: seed=12345, speed=" .. SMOKE_STEPS .. "x, limit="
       .. smoke.limit .. "s" .. (god and " [GOD]" or ""))
     StateM.switch("menu")

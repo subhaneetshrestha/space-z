@@ -29,11 +29,16 @@ function t.near(a, b, eps, msg)
 end
 
 local FILES = {
+  "tests.test_version",
+  "tests.test_build_config",
   "tests.test_rng",
   "tests.test_pool",
   "tests.test_json",
   "tests.test_save",
   "tests.test_runsave",
+  "tests.test_runsave_entities",
+  "tests.test_runsave_limits",
+  "tests.test_runsave_fuzz",
   "tests.test_countdown",
   "tests.test_game_resume",
   "tests.test_pause_save",

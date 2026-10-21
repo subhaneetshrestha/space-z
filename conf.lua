@@ -1,6 +1,14 @@
 function love.conf(t)
   t.identity = "space-z"
-  t.version = "11.5"
+
+  -- Declare the LÖVE version from LOVE_VERSION, so the runtime never shows its
+  -- "made for another version" dialog (it blocks launch, and CI would hang on it).
+  -- If the file cannot be read, t.version stays unset: LÖVE then assumes its own.
+  local ok, text = pcall(love.filesystem.read, "LOVE_VERSION")
+  if ok and text then
+    local version = require("src.compat").parseVersionFile(text).love
+    if version and version ~= "" then t.version = version end
+  end
 
   t.window.title = "Space Z"
   t.window.width = 480

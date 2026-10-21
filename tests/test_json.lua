@@ -21,6 +21,27 @@ function T.roundtrip_nested(t)
   t.near(decoded.pi, 3.14159, 1e-9)
 end
 
+-- A run save must resume bit-for-bit: a timer one rounding step from zero fires on
+-- the same frame or one frame later depending on its last digits.
+function T.numbers_round_trip_bit_exactly(t)
+  local values = {
+    0.1 + 0.2, 1 / 3, 2.4 - 144 * (1 / 60), 1 / 60 * 7, 1e-300, 123456789.123456789,
+    2 ^ 53, 1e21, 4.9e-324, -0.1 - 0.2, math.pi * 1e5,
+  }
+  for i = 1, #values do
+    local back = json.decode(json.encode({ v = values[i] })).v
+    t.ok(back == values[i], "value " .. i .. " came back as " .. string.format("%.17g", back)
+      .. " instead of " .. string.format("%.17g", values[i]))
+  end
+end
+
+function T.ordinary_numbers_stay_short(t)
+  t.eq(json.encode({ v = 0.5 }), '{"v":0.5}')
+  t.eq(json.encode({ v = 37.5 }), '{"v":37.5}')
+  t.eq(json.encode({ v = 1234 }), '{"v":1234}')
+  t.eq(json.encode({ v = 3.14159 }), '{"v":3.14159}')
+end
+
 function T.arrays_vs_objects(t)
   local s = json.encode({ 10, 20, 30 })
   t.ok(s:sub(1, 1) == "[", "consecutive int keys encode as array: " .. s)

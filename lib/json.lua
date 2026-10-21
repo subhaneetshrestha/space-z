@@ -27,7 +27,12 @@ end
 local function encodeNumber(n)
   if n ~= n then error("json.encode: cannot encode NaN") end
   if n == huge or n == -huge then error("json.encode: cannot encode infinity") end
-  return format("%.14g", n)
+  -- 14 digits read well and cover almost every number; the ones they would change
+  -- get 17, which always reads back as the same double (run saves must resume
+  -- bit-for-bit)
+  local s = format("%.14g", n)
+  if tonumber(s) ~= n then s = format("%.17g", n) end
+  return s
 end
 
 local encodeValue

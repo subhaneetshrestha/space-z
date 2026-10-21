@@ -28,14 +28,14 @@ ARCHITECTURE.md in the same change.**
 
 ## How to run
 
-- **Game:** `love .` from the repo root (install LÖVE 11.x from https://love2d.org).
+- **Game:** `love .` from the repo root, with the LÖVE pinned in `LOVE_VERSION` (`pwsh build/get-love.ps1`; see docs/BUILD.md).
   On Windows use `lovec.exe .` to see console output.
 - **Headless logic tests:** `lua tests/run.lua` (any Lua 5.1/LuaJIT) or `lovec . --test`.
 - **Automated smoke test:** `lovec . --smoke` — autopiloted full run at 8× speed with a fixed
   seed (12345); saves screenshots (`smoke_*.png`) + `smoke_report.txt` to the LÖVE save
   directory (`%APPDATA%\LOVE\space-z` on Windows), prints the report to stdout, quits with
   exit code 0 on success. It beats the boss and reaches VICTORY as of 2026-07-19.
-- Dev note: no system-wide LÖVE/Lua on the original dev machine; portable LÖVE 11.5 and
+- Dev note (from the original M0 setup, when the game still targeted LÖVE 11.5): no system-wide LÖVE/Lua on that dev machine; portable LÖVE and
   Lua 5.1.5 binaries were used from the session scratchpad (temp dir — re-download if gone).
 
 ## Milestone checklist (from docs/PLAN.md)
@@ -70,7 +70,53 @@ ARCHITECTURE.md in the same change.**
 
 ## Work log
 
+### 2026-10-21 — Exact run snapshot, rollback fix, LÖVE 12 (branch `feature/frozen-moment-save`)
+Spec `SPEC.md` (root), plan and tasks `docs/enemy-state-save/`. Builds on the entry below, which it supersedes
+where they differ.
+- **The cheat.** Save, quit and continue used to clear the field (enemies, bullets, pickups, the boss at full HP,
+  the ship back at the spawn point), so any attack could be escaped. A run save (**version 2**, version 1 still
+  loads) now holds the whole live moment: player, running timers, weapon cooldowns, every enemy with its movement
+  state, enemy and player bullets (a missile's lock on its target), gems, drones (their running hit cooldowns),
+  the boss with its pattern state, the phase and the warp clock. Nothing is rewound; a resumed run is identical
+  to an uninterrupted one frame by frame (proved for every enemy type, weapon and boss). `lib/json.lua` now
+  writes bit-exact numbers. Details: ARCHITECTURE.md (`runsave.lua`, `runsave_entities.lua`).
+- **Rollback.** Killing the app just before a lethal hit used to resume the autosave from up to 10 s earlier. The
+  saved run is now **deleted on every hit the ship takes or absorbs** (and on death and at run end), except for
+  autopilot and daily runs (a review found that `--smoke` deleted the developer's real `run.json`; fixed).
+  **Not closed, by decision:** a kill before the *first* hit after a save still resumes that save; Black Hole
+  mode is not helped. Options that would close it (exact saves only, a recovery slot, a replay journal) were
+  declined for now. After a hit there is no save for up to 10 s.
+- **Safety of the save.** Every entity in `run.json` is validated (types, ranges, per-pattern state, links, caps
+  700/800/1000/800/16 set from measurements: `docs/enemy-state-save/measurements.md`). Fuzzing mutates ~5,900 fields
+  of real saves; each is rejected or resumes without error, hang or NaN. Sampling real play found three bounds the
+  validation had wrong (timers that sit a hair below zero, a bullet life of 1e-16, a drone cooldown a hair past the
+  save time), all fixed. Autosave cost, desktop, worst case: 4.1 ms (1.0 median), 57 KB.
+- **LÖVE 12.** `LOVE_VERSION` is the single source (`conf.lua`, scripts, CI, docs); `src/compat.lua` holds the one
+  engine difference the game touches. The Windows exe is built from the pinned LÖVE 12 commit
+  (`build/get-love.ps1`); CI has an `engine` job running the suite and a smoke run inside LÖVE 12 on Mesa's
+  software OpenGL; the Android APK is built from a pinned `love-android` commit. **The browser build is the one
+  documented exception** (love.js has no LÖVE 12 port): it packages the game with its own `LOVE_VERSION`.
+  See docs/BUILD.md ("Which LÖVE", "Moving to a newer LÖVE").
+- **Verified.** 724 headless tests (`luajit tests/run.lua`) and the same 724 inside LÖVE 12 (`lovec . --test`), also
+  under software OpenGL and, for the web package, inside a real LÖVE 11.5; `--smoke` gives the identical final line
+  everywhere (kills=381); the fused `SpaceZ.exe` runs the smoke run; an Android debug APK built from the pinned
+  commit installs on an emulator, shows the menu and plays with no version dialog (with OpenGL ES forced); both
+  mismatch guards of the Windows build refuse a wrong folder. Negative controls (a deliberately broken
+  implementation must fail the suite) were run for every task.
+- **Not verified / open.**
+  - The new CI jobs (`engine`, the pinned `windows` and `android`) have **never run on GitHub**; whether the workflow
+    token can read `love2d/love`'s artifacts is unproven. They gate every release: run them on a pull request first.
+  - The pinned LÖVE 12 desktop artifact expires about **2026-12-19**.
+  - Nothing has been checked on a phone: the 10-20 ms autosave hitch projected from the desktop numbers, the
+    version dialog, and LÖVE 12's Vulkan renderer. On the Android **emulator** the default (Vulkan) renderer crashes
+    inside the emulator's driver; forcing OpenGL ES works. Whether to force it on Android is undecided.
+  - The APK's LÖVE (bundled by love-android) is 34 commits older than the desktop pin.
+  - The browser build was built but not seen running in a browser.
+  - The manual checks in `SPEC.md` (boss mid-barrage, force-kill, background during a draft, on desktop and Android).
+
 ### 2026-10-20 — Run save & Continue (branch `feature/run-save-resume`)
+- *Superseded by the entry above: enemies, bullets, the boss and the rest of the live field ARE saved now (version 2),
+  a boss fight is no longer rewound, and the save is deleted on a hit. The text below is kept as history.*
 - **Feature:** one saved run (stored in its own `run.json`) with a menu **CONTINUE** row, a 3-2-1 **countdown** after
   resuming and after pause Resume, and pause row 2 = **SAVE & QUIT**. Spec/plan/tasks:
   `docs/run-save-resume/`. Run-state snapshot (progression, build, HP, RNG, spawner timers); enemies,
