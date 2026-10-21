@@ -8,7 +8,7 @@ A **2D space-themed roguelite** for phones and PC — a vertical-ascent space sh
 |---|---|
 | **Genre** | Vertical-ascent space-shooter roguelite (survivors-like / bullet-heaven) |
 | **Platforms** | Android, iOS, PC (Windows/macOS/Linux) |
-| **Engine** | [LÖVE (Love2D)](https://love2d.org) 11.x — Lua, open source (zlib) |
+| **Engine** | [LÖVE (Love2D)](https://love2d.org) 12 — Lua, open source (zlib). The exact version is pinned in `LOVE_VERSION` |
 | **Art** | Neon-vector, generated procedurally in code (no external art assets) |
 | **Controls** | One thumb — 1:1 relative drag from anywhere on screen / mouse or WASD on PC; weapons auto-fire |
 | **Modes** | Standard (HP + regen) · **Black Hole** — secret hardcore mode (one-hit death, tankier enemies), unlocked by a flawless no-damage run |
@@ -38,7 +38,7 @@ for a bigger bump). Pull-request builds land in the **Actions** tab → `build` 
 ## Run it
 
 ```
-# install LÖVE 11.x from https://love2d.org, then from the repo root:
+# get the LÖVE pinned in LOVE_VERSION (`pwsh build/get-love.ps1`, see docs/BUILD.md), then from the repo root:
 love .               # play (lovec.exe on Windows shows console output)
 lua tests/run.lua    # headless logic tests (any Lua 5.1 / LuaJIT)
 lovec . --smoke      # autopiloted smoke test + screenshots (add `god` for a full clear)

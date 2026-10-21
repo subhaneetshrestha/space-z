@@ -1,5 +1,9 @@
 # Implementation Plan: Run Save & Continue
 
+> **Superseded.** This is the spec of the first run-save feature (progression and build only; the boss rewound to full HP,
+> an empty field on resume, autosave only). It shipped, and was then replaced by the exact snapshot: see `SPEC.md` in the
+> repository root and `docs/enemy-state-save/`. Kept for history; where it disagrees with them, they win.
+
 Spec: `docs/run-save-resume/spec.md`. Task list: `docs/run-save-resume/todo.md`. Tests: `lua tests/run.lua`.
 
 ## Overview

@@ -1,7 +1,8 @@
 # Space Z — Architecture Contract (M0–M1)
 
 > Binding API contract for implementation. Every module listed here MUST expose exactly the API
-> documented. Written against **LÖVE 11.5** (LuaJIT / Lua 5.1). See `docs/PLAN.md` for design intent.
+> documented. Written against **LÖVE 12** (LuaJIT / Lua 5.1); the exact version is pinned in `LOVE_VERSION`
+> (see `docs/BUILD.md`). See `docs/PLAN.md` for design intent.
 > Scope of this contract: milestones **M0 + M1** (core feel + one full roguelite run through Zone 1).
 
 ## Global conventions
@@ -33,8 +34,16 @@ main.lua          -- love callbacks, fixed timestep, arg parsing (--test / --smo
 ```
 
 - `conf.lua`: `t.window.title = "Space Z"`, `t.window.width = 480`, `t.window.height = 854`,
-  `t.window.resizable = true`, `t.window.vsync = 1`, `t.identity = "space-z"`, `t.version = "11.5"`.
-  Disable unused modules (joystick, physics, video) for startup speed.
+  `t.window.resizable = true`, `t.window.vsync = 1`, `t.identity = "space-z"`. `t.version` is **not** written
+  here: `conf.lua` reads the `love` key of `LOVE_VERSION` (packaged inside the `.love`) through
+  `Compat.parseVersionFile`, so the version LÖVE is told matches what the build was made for and LÖVE never
+  shows its "made for another version" dialog (which blocks a launch, and CI). If the file cannot be read
+  `t.version` stays unset. Disable unused modules (joystick, physics, video) for startup speed.
+- `src/compat.lua` is the **one place** where the LÖVE versions the game runs on differ, plus the `LOVE_VERSION`
+  parser: `Compat.readbackImageData(texture, lg)` (`love.graphics.readbackTexture` where it exists, else the
+  older `Texture:newImageData`) and `Compat.parseVersionFile(text) -> { love=, love_commit=, ... }`. No other file
+  checks the engine version. The game still runs on an older engine: the browser build does, and it is the one
+  documented exception (see `LOVE_VERSION` and docs/BUILD.md).
 - `main.lua` responsibilities:
   1. `love.load(args)`: if `args` contains `"--test"` → `require("tests.run").runAll()` then
      `love.event.quit(failures == 0 and 0 or 1)`; print results with `print()`.
@@ -488,8 +497,9 @@ again here; invalid → plain new run) overrides seed/mode/ship; the world is bu
 Leveling), wire event listeners:
 - `enemy_killed` → `Pickups.dropXp` at enemy pos (value `enemy.xp`), explosion particles, `shake += 1` (cap 10)
 - `enemy_hit` → small spark burst (skip if > 300 particles)
-- `player_damaged` → red flash overlay timer, shake
-- `player_died` → `world.phase = "over"`, after 1.2s death-pause → `StateM.push("gameover", {won=false, world=world})`
+- `player_damaged` → delete the saved run (`dropSavedRun`, below), red flash overlay timer, shake
+- `shield_blocked` → delete the saved run, "SHIELD DOWN" toast, ring flash
+- `player_died` → delete the saved run, `world.phase = "over"`, after 1.2s death-pause → `StateM.push("gameover", {won=false, world=world})`
 - `boss_killed` → big explosion, `world.phase = "warp"`, `warpT = 2.5`, emit `zone_completed`
 `update(dt)` order (exactly):
 ```
@@ -516,9 +526,22 @@ never applied to HUD. `keypressed "escape"` → push `"pause"` with `{ save = Ga
 **Run saves.** `Game.saveRun() -> bool` is the single save entry point (autosave, pause, quit,
 `love.focus(false)`, `love.quit`). It does nothing unless the game state is active (`leave()` clears
 `M.active`; `Game.world` outlives the state), and counts an open `levelup` draft back into
-`pendingLevelUps`. `RunSave.snapshot` refuses dead, `over`, daily and autopilot runs. Autosave runs every
-10 s of unpaused play (just before step 12, so a pending level-up is still counted). `player_died` calls
-`Save.clearRun()` immediately; a win clears it in `endRun` just before `Progress.endRun`.
+`pendingLevelUps`. `RunSave.snapshot` refuses dead, `over`, daily and autopilot runs (and a boss phase with
+no boss). Autosave runs every 10 s of unpaused play (just before step 12, so a pending level-up is still
+counted). The save is a snapshot **between frames** (autosave, pause, background, quit), never mid-frame.
+
+**Deleting the save: `dropSavedRun(world)`.** The saved run is deleted at once on `player_died`, on **every hit
+the ship takes or absorbs** (`player_damaged`, `shield_blocked`) and when a run ends (`endRun`, just before
+`Progress.endRun`), so a save from before a hit that has landed cannot be loaded: killing the app does not undo a
+hit. It is deleted, not rewritten, because those events fire in the middle of collision handling, where a
+snapshot would not be exact; the next autosave, pause, background or quit writes a fresh one. It does nothing
+for an autopilot run (what `--smoke` plays) or a daily run: they are never saved, so whatever is on disk belongs
+to another session. Known gap, by decision (SPEC.md Part C): killing the app *before* the first hit after a save
+still resumes that save (at most 10 s old, or exactly the pause moment); Black Hole mode, where any hit is lethal,
+is not helped by this.
+
+On resume (`enter` with `params.resume`) the music follows the restored phase: the boss theme in a boss fight,
+none in a warp, the zone theme otherwise; no `boss_spawned` event is re-emitted (no second entrance).
 
 ### levelup.lua — `"levelup"` (translucent overlay)
 `enter({world})`: `offer = Leveling.buildOffer(world)`; dim game 70%; cards animate in (~0.25s).
@@ -667,7 +690,9 @@ game.lua: zone theme on enter/warp, boss theme on `boss_spawned`, stop on death/
 ### lib/json.lua — minimal JSON encode/decode (MIT-style, self-written, no deps)
 `json.encode(t) -> s`, `json.decode(s) -> t`. Handles nested tables, arrays vs objects
 (consecutive integer keys 1..n → array), strings w/ escapes, numbers, booleans, null→nil.
-Errors via `error()` on malformed input.
+Errors via `error()` on malformed input. Numbers are written with 14 significant digits when that reads
+back as the same double, else 17 (which always does): short for ordinary numbers, **bit-exact** for the rest.
+A run save depends on it (a timer one rounding step from zero fires on a different frame otherwise).
 
 ### save.lua
 ```lua
@@ -690,25 +715,63 @@ Why a separate file: the run is rewritten every ~10 s and on backgrounding; a to
 torn `run.json` just means "no saved run". `version` of save.json stays 1.
 
 ### runsave.lua — snapshot / validate / apply of an in-progress run
-Pure data, no `love.*`. One saved run at a time, stored in `run.json` (see save.lua).
+Pure data, no `love.*`. One saved run at a time, stored in `run.json` (see save.lua). **Version 2** is the
+*exact snapshot*: the whole live field, as it stands, so resuming changes nothing about the moment of the
+save. A version 1 save (progression and build only, from before) still loads and resumes with an empty field
+at the spawn point, as it always did.
 ```lua
 RunSave.snapshot(world, { draftOpen = bool }) -> run | nil
 RunSave.validate(run) -> bool       -- untrusted input: any bad field means "no save"
 RunSave.apply(world, run) -> bool   -- onto a fresh game:enter world; false = world untouched
+RunSave.WARP_TIME                   -- 2.5, what game.lua starts the warp clock at (a test keeps them equal)
 ```
-A run holds: `version, mode ("standard"|"blackhole"), seed, ship, time, distance, zoneIndex, zoneTime,
-zoneStartDistance, level, xp, xpNext, pendingLevelUps, kills, bossKills, noDamage, stardustEarned, hp,
-weapons[{id,level}], passives[{id,level}], rng{spawn,drops,cards,misc}, spawnerTimers[{index,value}]`.
-Not saved: enemies, bullets, pickups, drones, particles, the boss, cooldowns and transient timers.
-`snapshot` returns nil for dead / `over` / daily / autopilot runs. Every saved run resumes in phase
-`"waves"`: a `boss`-phase run is rewound to `zoneTime = zone.duration` (the spawner re-spawns the
-boss at full HP once the field is clear); a `warp`-phase run resumes at the start of the next zone
-(nil if that was the last zone). `maxhp` is recomputed by `Leveling.recomputeStats`; `hp` is clamped to
-`[1, maxhp]`. json.lua writes numbers with 14 significant digits, so clocks round-trip within ~1e-14.
-`validate` also bounds anything that drives a loop: each spawner timer must be in (0, that wave's interval]
-(`Spawner.update` loops `while timer <= 0`), at most one timer entry per wave, and `pendingLevelUps <= level`
-(one draft opens per frame). Weapon/passive caps come from `Leveling.MAX_WEAPONS` / `MAX_PASSIVES`.
+A version 2 run holds, besides the scalars (`mode ("standard"|"blackhole"), seed, ship, time, distance, zoneIndex,
+zoneTime, zoneStartDistance, level, xp, xpNext, pendingLevelUps, kills, bossKills, noDamage, stardustEarned, hp`):
+- `phase` (`"waves"|"boss"|"warp"`), `warpT` (the warp clock, 0 outside a warp), `boss` (the slot of `world.boss`
+  in `enemies`, only in the boss phase);
+- `player{x,y,vx,vy,invulnT}` and `timers{freezeT,shieldT,pulseT,hpRingT}`;
+- `weapons[{id,level,cooldown,side?,tickT?}]` (a save never refills a weapon), `passives[{id,level}]`,
+  `rng{spawn,drops,cards,misc}`, `spawnerTimers[{index,value}]`;
+- the field: `enemies`, `bullets`, `ebullets`, `pickups`, `drones` (see `runsave_entities.lua`).
 
+**Nothing is rewound.** A boss fight resumes with the same boss, at the same health and pattern state, bullets
+still in flight; a warp resumes as a warp with its clock (including the last zone's, which plays out the win);
+`snapshot` returns nil only for dead / `over` / daily / autopilot runs, or a boss phase with no boss to rebuild
+the fight from. `maxhp` is recomputed by `Leveling.recomputeStats`; `hp` is clamped to `[1, maxhp]`.
+`validate` takes a version 1 or 2 run. For version 2 it checks every block and what ties them together: the
+phase against the zone clock (a boss or warp comes after the zone's timeline), `warpT` in (0, `WARP_TIME`] during
+a warp and 0 otherwise, and that a boss exists exactly in the boss phase, once, as the slot `boss` names, and is
+the boss of the run's zone. It also bounds anything that drives a loop or could stall a weapon: each spawner
+timer in (0, that wave's interval] (`Spawner.update` loops `while timer <= 0`), `pendingLevelUps <= level`,
+weapon timers <= 3600 s, speeds <= 5000. **The game only counts a timer down while it is above zero, so one that
+has just run out sits a hair below it: running timers (`freezeT`, `invulnT`, ...) are valid down to -1, and a
+bullet's `life` or a drone cooldown is valid at any amount above zero (no invented epsilon: a real run produced
+`life = 1e-16`).** Weapon/passive caps come from `Leveling.MAX_WEAPONS` / `MAX_PASSIVES`.
+Measured sizes, the caps, the autosave cost and the fuzzing: `docs/enemy-state-save/measurements.md`.
+
+### runsave_entities.lua — the live field inside a run save
+Pure data; capture, restore and validation of enemies (and the boss), enemy bullets, player bullets, XP gems and
+orbit drones, used by `runsave.lua`.
+- **Explicit field lists per kind** (`ENEMY_SAVED`, `BULLET_FIELDS`, `BOSS_FIELDS`, ...). Everything else on a live
+  entity is `DERIVED` (rebuilt from its def on restore: `def` is saved as an id, `sprite` is the def's or the
+  weapon's, `kind`/`dead` are constants) or an error: `unclassifiedEnemyKeys` / `...BulletKeys` / `...EbulletKeys` /
+  `...PickupKeys` / `...DroneKeys` / `...BossKeys` return the keys that are neither, and the tests run long
+  simulations through every enemy, weapon and boss and fail on any such key, so **a new behaviour field cannot be
+  silently left out of a save**.
+- **List order is part of the state** (`Pool.sweep` swap-removes and collision stops at the first hit in list
+  order), so entities are saved and restored in order, as fresh pooled tables.
+- **Links between entities are saved as slots** in the saved enemy list: a homing missile's `target`, a drone's
+  running hit cooldowns (`{slot, expiry}`, only those still running: an expired one acts like none), and
+  `world.boss`. `captureEnemies` returns the table -> slot map the others use; a dead or wiped target saves as
+  nil (the steering code retargets the nearest enemy for exactly those cases).
+- **A boss** is an enemy entry with `boss = <id>` instead of `def`, the common boss fields, and the scratch of its
+  pattern (`BOSS_PATTERNS`: kessler, leviathan, warmachine, titan, storm, guardian, overlord). A pattern's init runs
+  when the entrance ends, so an entering boss has none of its fields and a finished one has every one that init
+  sets; a leviathan diving needs its `diveX`, a storm dashing its `dashX`.
+- **Validation** is per entity: types and ranges, no unknown keys, and what the movement code assumes after its
+  lazy init (a shooter holding position without its `baseX` would index nil on the first frame). `validBossLink`
+  ties the boss to the phase. Caps `MAX_ENEMIES / MAX_BULLETS / MAX_EBULLETS / MAX_PICKUPS / MAX_DRONES`
+  (700 / 800 / 1000 / 800 / 16) sit at least 4x above the most the game was measured to produce.
 ### progress.lua
 `Progress.endRun(world, won) -> summary` — computes stardust per the formula in game.lua §,
 mutates Save.data(), calls Save.write(), returns `{ stardust=, unlockedBlackhole=bool, ... }`.
@@ -725,11 +788,20 @@ Test files (minimum): `test_rng.lua` (determinism, ranges, shuffle), `test_pool.
 (stat recompute, offer validity: 3 distinct, respects caps/maxLevel), `test_pickups.lua`
 (xp→level curve incl. multi-level), `test_spawner.lua` (wave timeline counts vs simulated time,
 seeded determinism), `test_save.lua` (round-trip encode/decode, defaults, corrupt file → defaults),
-`test_json.lua`, `test_runsave.lua` (snapshot, validation, apply, determinism), `test_countdown.lua`,
+`test_json.lua` (incl. bit-exact numbers), `test_runsave.lua` (snapshot, validation, apply, legacy version 1),
+`test_runsave_entities.lua` (the field: capture/restore, **behavioural identity** of a resumed twin against the
+original frame by frame for every enemy type, weapon and boss, completeness of the saved field lists, per-entity
+validation), `test_runsave_limits.lua` (caps vs measured peaks; every autosave of real play validates),
+`test_runsave_fuzz.lua` (mutates every field of real saves; each mutant is rejected or resumes safely, under an
+instruction budget), `test_version.lua` (LOVE_VERSION, `conf.lua`, `compat.lua`, and a gate that no file names an old
+LÖVE version outside the web exception), `test_build_config.lua` (static checks of the build scripts and CI),
+`test_countdown.lua`,
 `test_game_resume.lua` / `test_pause_save.lua` / `test_app_lifecycle.lua` / `test_menu_continue.lua` (the
 real game, pause and menu states over the real state stack, with only render/audio modules stubbed;
 `test_app_lifecycle` loads `main.lua`'s focus/quit hooks in a sandbox), plus `tests/support.lua` and
-`tests/game_harness.lua` (shared helpers; not in `run.lua`'s `FILES`). Under LÖVE, `run.lua` swaps in an
+`tests/game_harness.lua` (shared helpers, incl. a recording Music stub, `bossFight`, `resumeTwin`; not in `run.lua`'s
+`FILES`), and `tests/measure_runsave.lua` (not a test: `luajit tests/measure_runsave.lua` measures peak entity counts and
+autosave cost for the caps). Under LÖVE, `run.lua` swaps in an
 in-memory `love.filesystem` for the whole suite, so tests never touch the player's real save files. Tests construct minimal fake worlds (plain tables) — systems must not require
 love APIs at module load time (render/* and ui/* excluded from tests; they may use love freely.
 `core/util.lua` guards its font cache behind `love ~= nil`).

@@ -1,5 +1,9 @@
 # Spec: Run Save & Continue (with 3-2-1 resume countdown)
 
+> **Superseded.** This is the spec of the first run-save feature (progression and build only; the boss rewound to full HP,
+> an empty field on resume, autosave only). It shipped, and was then replaced by the exact snapshot: see `SPEC.md` in the
+> repository root and `docs/enemy-state-save/`. Kept for history; where it disagrees with them, they win.
+
 ## Objective
 
 Today a run lives only in memory. Quitting to the menu, closing the app, or Android killing the

@@ -43,10 +43,10 @@ Everything in the existing snapshot stays (progression, build, clocks, RNG strea
 |---|---|
 | Player | `x, y, vx, vy, invulnT, shieldT, pulseT, hpRingT`, and each weapon's `cooldown` (today reset to 0). |
 | Enemies | Per live enemy: `def` id (or `bossDef` id for the boss), `x, y, vx, vy, rot, scale, r, t, bt, hp, maxhp, touchDamage, xp, elite, flashT, slowT, slowMult, entering, bossPhase`, plus its behaviour scratch fields (`phase, baseX, spin, spd, fireT, lungeT, state, stateT, burstT, fanT, addT, ...`). |
-| Enemy bullets | `x, y, vx, vy, r, rot, scale, t, damage, life, sprite`. |
-| Player bullets | `x, y, vx, vy, r, rot, t, damage, pierce, life, weaponId, slowT, slowMult, aoe`. |
-| Pickups | Whatever `Pickups` sets per gem and heal drop (type, value, position, velocity, age). |
-| Drones | Each drone's `angle`, position and hit cooldown, so the orbit continues without a jump. |
+| Enemy bullets | `x, y, vx, vy, r, rot, scale, t, damage, life`. The sprite is constant, so it is derived, not saved. |
+| Player bullets | `x, y, vx, vy, r, rot, scale, t, damage, pierce, life, weaponId, slowT, slowMult, aoe, homing`, and a homing missile's `target` as a slot in the saved enemy list. The sprite is the weapon's, so it is derived. |
+| Pickups | XP gems: `ptype, x, y, vx, vy, r, rot, scale, t, value, magnet`. The sprite is a tier of the value, so it is derived. |
+| Drones | Each drone's `angle`, position, `t`, `damage`, `orbitR`, `angVel`, and its hit cooldowns **that are still running** as `{ enemy slot, expiry }` pairs, so the orbit continues without a jump. |
 | World | `phase` (including `boss` and `warp`), `warpT`, `freezeT`, and whether `world.boss` points at an entry in the saved enemy list. |
 
 Not saved (cosmetic, no gameplay effect): particles, arcs, beams, pulses, toasts, shake, starfield,

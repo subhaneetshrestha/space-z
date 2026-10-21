@@ -206,7 +206,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 
 ## Phase 4: Ship
 
-- [ ] **B7: Docs, upgrade procedure, leftovers gate**
+- [x] **B7: Docs, upgrade procedure, leftovers gate** (724/0 headless and inside LÖVE 12. New checks in `tests/test_version.lua`: no scanned file (README, `conf.lua`, `main.lua`, the build scripts, CI, BUILD, ARCHITECTURE, PLAN) names an old LÖVE version, with the web build's files and the web section of `BUILD.md` as the documented exception; the upgrade procedure exists with its key steps; the architecture doc names the modules it describes. Control: putting "11.5" back in the README fails the gate and names the line. Docs: `BUILD.md` gets "Which LÖVE" and "Moving to a newer LÖVE", the `engine` job, the pinned Android flow and its emulator findings; `ARCHITECTURE.md` run-save section rewritten (version 2, `runsave_entities.lua`, links as slots, caps, validation rules, `dropSavedRun`), plus `conf.lua`/`compat.lua`, the exact JSON numbers and the new tests; README, PLAN and PROGRESS no longer name a version, and PROGRESS has a work-log entry for this branch; the first run-save feature's spec and plan are marked superseded and `SPEC.md`'s field table now says which fields are derived. Closes review item R2.)
   - Description: Update `docs/BUILD.md`, `docs/ARCHITECTURE.md` (runsave v2: formats, references, caps; LÖVE 12), `docs/PROGRESS.md` and `README.md`. Add the "move to a newer LÖVE" procedure. Add a headless test that fails if `11.5` appears in tracked build files or docs outside `LOVE_VERSION`, history files and the plan.
   - Acceptance:
     - [ ] Criteria 11, 14 and 15: one source of truth, a documented upgrade step, and no leftover 11.x workarounds.

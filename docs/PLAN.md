@@ -59,7 +59,7 @@ Three findings shape the design: (1) **"Simple but deep" is a deliberate formula
 
 ## Engine & tech stack
 
-**Engine: LÖVE (Love2D) 11.x** — with the one honest trade-off called out.
+**Engine: LÖVE (Love2D)** (the version in use is pinned in `LOVE_VERSION`) — with the one honest trade-off called out.
 
 Why LÖVE: **pure Lua** on **LuaJIT** (speed for thousands of entities); **genuinely open source** (zlib) — whereas Defold is **"source-available," not OSI open source**, cutting against the "open source as much as possible" requirement [defold.com/opensource]; and the **best autonomous-dev loop** (everything is Lua + your game loop; edit `.lua`, run `love .` instantly, no editor). Defold is editor-centric (protobuf scene files) — far less natural for pure code-gen. Strong batched 2D (`SpriteBatch`, `ParticleSystem`, `Canvas`, shaders); ships to desktop + Android + iOS + web; proven by hits (e.g., Balatro).
 
