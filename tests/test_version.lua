@@ -93,6 +93,69 @@ end
 
 -- ------------------------------------------------------------------- compat
 
+-- Canvas -> straight-alpha atlas texture. In the browser (WebGL 1) Canvas:newImageData
+-- returns all zeros, which left every sprite invisible, so there the conversion runs on the
+-- GPU in a shader; everywhere else the exact readback path stays as it was.
+local function fakeGraphics()
+  local g = { calls = {}, released = {} }
+  local function note(name) return function(...) g.calls[#g.calls + 1] = name; return ... end end
+  local canvas = { getDimensions = function() return 64, 32 end, release = function() g.released.canvas = true end }
+  g.canvas = canvas
+  g.newShader = function(src) g.shaderSource = src; g.calls[#g.calls + 1] = "newShader"; return {} end
+  g.newCanvas = function(w, h) g.out = { w = w, h = h, setFilter = function(_, a, b) g.filter = a .. b end }; g.calls[#g.calls + 1] = "newCanvas"; return g.out end
+  g.push = note("push"); g.pop = note("pop"); g.clear = note("clear"); g.setColor = note("setColor")
+  g.setCanvas = note("setCanvas"); g.setShader = note("setShader")
+  g.setBlendMode = function(mode) g.blend = mode; g.calls[#g.calls + 1] = "setBlendMode" end
+  g.draw = function(what) g.drew = what; g.calls[#g.calls + 1] = "draw" end
+  return g
+end
+
+function T.atlas_in_the_browser_is_converted_on_the_gpu_without_a_readback(t)
+  local g = fakeGraphics()
+  g.canvas.newImageData = function() error("a readback is what the browser cannot do") end
+  g.readbackTexture = nil
+  local out = Compat.atlasTexture(g.canvas, g, true, function() error("no per-pixel Lua pass") end)
+  t.eq(out, g.out, "the converted canvas is the atlas")
+  t.eq(g.drew, g.canvas, "the premultiplied atlas canvas is drawn into it")
+  t.eq(g.blend, "replace", "written as is, not blended")
+  t.ok(g.shaderSource and g.shaderSource:find("c.rgb", 1, true) and g.shaderSource:find("c.a", 1, true),
+    "a shader divides the colour by the alpha")
+  t.eq(g.filter, "linearlinear")
+  t.eq(g.released.canvas, true, "the premultiplied canvas is freed")
+end
+
+function T.atlas_off_the_browser_still_reads_back_and_unpremultiplies_per_pixel(t)
+  local g = fakeGraphics()
+  local mapped, released, imageFrom
+  local data = {
+    mapPixel = function(_, f) mapped = f end,
+    release = function() released = true end,
+  }
+  g.canvas.newImageData = function() return data end
+  g.newImage = function(d) imageFrom = d; return { setFilter = function(_, a, b) g.filter = a .. b end } end
+  local fn = function() end
+  local out = Compat.atlasTexture(g.canvas, g, false, fn)
+  t.eq(mapped, fn, "the per-pixel pass is the caller's")
+  t.eq(imageFrom, data)
+  t.eq(g.filter, "linearlinear")
+  t.eq(released, true)
+  t.eq(g.released.canvas, true)
+  t.ok(out ~= nil)
+  t.eq(g.shaderSource, nil, "no shader off the browser")
+end
+
+function T.readFile_returns_what_is_there_and_never_reads_what_is_not(t)
+  local reads = {}
+  local fs = {
+    getInfo = function(path) if path == "here.json" then return { size = 2 } end end,
+    read = function(path) reads[#reads + 1] = path; return "{}" end,
+  }
+  t.eq(Compat.readFile("here.json", fs), "{}")
+  t.eq(Compat.readFile("gone.json", fs), nil)
+  t.eq(#reads, 1, "read ran only for the file getInfo found")
+  t.eq(reads[1], "here.json")
+end
+
 function T.readback_uses_readbackTexture_when_the_engine_has_it(t)
   local image = {}
   local calledWith

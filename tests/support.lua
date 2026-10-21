@@ -166,11 +166,22 @@ end
 -- In-memory stand-in for love.filesystem: read / write / remove over a table, with
 -- a log of written names. Lets tests exercise Save's real file code path without
 -- touching the player's actual save files.
+-- missingReads counts read() calls for a file that is not there: LÖVE returns nil for
+-- them, but the browser runtime (love.js) raises a fatal error even inside pcall, so the
+-- game must never make one.
 function M.memoryFilesystem()
-  local fs = { files = {}, writes = {} }
+  local fs = { files = {}, writes = {}, missingReads = 0 }
+  function fs.getInfo(name)
+    local contents = fs.files[name]
+    if contents == nil then return nil end
+    return { type = "file", size = #contents }
+  end
   function fs.read(name)
     local contents = fs.files[name]
-    if contents == nil then return nil, "not found: " .. name end
+    if contents == nil then
+      fs.missingReads = fs.missingReads + 1
+      return nil, "not found: " .. name
+    end
     return contents, #contents
   end
   function fs.write(name, data)

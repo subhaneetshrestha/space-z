@@ -111,7 +111,7 @@ where they differ.
     version dialog, and LÖVE 12's Vulkan renderer. On the Android **emulator** the default (Vulkan) renderer crashes
     inside the emulator's driver; forcing OpenGL ES works. Whether to force it on Android is undecided.
   - The APK's LÖVE (bundled by love-android) is 34 commits older than the desktop pin.
-  - The browser build was built but not seen running in a browser.
+  - The browser build now runs in Edge (first visit, play, save, reload, continue; `node build/check-web.mjs`). It was broken before that by two browser-only bugs, fixed in this change; it is still not run in CI, and was checked in Edge only.
   - The manual checks in `SPEC.md` (boss mid-barrage, force-kill, background during a draft, on desktop and Android).
 
 ### 2026-10-20 — Run save & Continue (branch `feature/run-save-resume`)

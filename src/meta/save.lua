@@ -3,6 +3,7 @@
 -- a torn write there must never be able to wipe the permanent progress in save.json).
 -- Headless-safe: without love.filesystem the data lives in memory only.
 local json = require("lib.json")
+local Compat = require("src.compat")
 
 local M = {}
 
@@ -50,7 +51,7 @@ end
 function M.load()
   local data = defaults()
   if love and love.filesystem then
-    local ok, contents = pcall(love.filesystem.read, FILENAME)
+    local ok, contents = pcall(Compat.readFile, FILENAME)
     if ok and type(contents) == "string" then
       local okDecode, loaded = pcall(json.decode, contents)
       if okDecode and type(loaded) == "table" then
@@ -90,7 +91,7 @@ function M.rawRun()
     runLoaded = true
     runCache = nil
     if love and love.filesystem then
-      local ok, contents = pcall(love.filesystem.read, RUN_FILENAME)
+      local ok, contents = pcall(Compat.readFile, RUN_FILENAME)
       if ok and type(contents) == "string" then
         local okDecode, loaded = pcall(json.decode, contents)
         if okDecode and type(loaded) == "table" then runCache = loaded end

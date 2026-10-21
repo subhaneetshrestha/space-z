@@ -197,7 +197,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Description: `build-web.ps1` uses `love.js`, which ships a LÖVE 11.x runtime. Check whether a LÖVE 12 `love.js` exists. **Stop and ask the user**: (a) stay on the 11.x runtime with a documented exception (the game must still run there, so keep `src/compat.lua` honest), or (b) drop the web build from the pipeline. Implement the choice.
   - Acceptance:
     - [ ] The decision is recorded in `docs/BUILD.md` and the script header.
-    - [ ] If kept, `build-web.ps1` runs and the game starts in a browser; if dropped, nothing references it.
+    - [x] If kept, `build-web.ps1` runs and the game starts in a browser (checked in Edge on 2026-10-21 after two fixes: a missing-file read that killed the first launch, and an empty sprite atlas; `build/check-web.mjs` repeats the check).
   - Verify:
     - [ ] `pwsh build/build-web.ps1 -Serve` and play, or confirm removal
   - Dependencies: B2 (and the user's decision)
@@ -241,5 +241,5 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 - [x] LÖVE 12 desktop artifact expiry (~2026-12-19): the pinned build is mirrored as pre-release `love-b7daef0` and used first by `get-love.ps1`, checked by `love_win64_sha256` (736 tests).
 - [x] Phone: the v1.1.18 debug APK was tried on a real phone and works (the owner's check, 2026-10-21: "seems fine", so there are no numbers for the autosave hitch). It runs on the default renderer, so OpenGL ES is not forced.
 - [ ] Manual desktop checks from `SPEC.md` (a person has to play them).
-- [ ] The web build has not been seen running in a browser (headless Edge only reached the loader).
+- [x] The web build was run in Edge: it was broken on a first visit (fatal read of a missing save.json) and drew no sprites (WebGL 1 readback returns zeros); both fixed, and play, SAVE, reload and CONTINUE then work in the browser. Not run in CI; only Edge was tried.
 - Accepted as is: the APK's bundled LÖVE (`792690b`) is older than the desktop pin until love-android moves its submodule; the build prints it every time.
