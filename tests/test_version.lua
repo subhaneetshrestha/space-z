@@ -69,18 +69,26 @@ end
 -- unevenly (about 7 ms then 26 ms, worst frame 64 ms, at an average of 75 fps) where OpenGL
 -- holds a steady 13.3 ms (docs/enemy-state-save/love12-findings.md), so Windows asks for
 -- OpenGL. Other platforms keep LÖVE's own choice: the Android phone check was fine as is.
-function T.conf_asks_for_opengl_on_windows(t)
+-- The list is the set LÖVE may pick from, not an order: { "opengl", "vulkan" } still picks
+-- Vulkan (tried against LÖVE 12), so OpenGL has to be the only entry. The field is
+-- t.graphics.renderers: LÖVE 12 prints a warning at every launch for the old t.renderers.
+function T.conf_allows_only_opengl_on_windows(t)
   local conf = runConf(readFile, "Windows")
-  t.ok(type(conf.renderers) == "table", "t.renderers must be set")
-  t.eq(#(conf.renderers or {}), 1, "OpenGL only, no fallback to Vulkan")
-  t.eq((conf.renderers or {})[1], "opengl")
+  local list = conf.graphics and conf.graphics.renderers
+  t.ok(type(list) == "table", "t.graphics.renderers must be set")
+  t.eq(#(list or {}), 1, "OpenGL alone: any second entry lets LÖVE choose Vulkan again")
+  t.eq((list or {})[1], "opengl")
+  t.eq(conf.renderers, nil, "not the deprecated t.renderers")
 end
 
 function T.conf_leaves_the_renderer_to_love_everywhere_else(t)
-  t.eq(runConf(readFile, "Android").renderers, nil, "Android")
-  t.eq(runConf(readFile, "OS X").renderers, nil, "macOS")
-  t.eq(runConf(readFile, "Linux").renderers, nil, "Linux")
-  t.eq(runConf(readFile, nil).renderers, nil, "a runtime that does not say")
+  for _, os in ipairs({ "Android", "OS X", "Linux" }) do
+    local conf = runConf(readFile, os)
+    t.eq(conf.graphics and conf.graphics.renderers, nil, os)
+    t.eq(conf.renderers, nil, os)
+  end
+  local unknown = runConf(readFile, nil)
+  t.eq(unknown.graphics and unknown.graphics.renderers, nil, "a runtime that does not say")
 end
 
 -- ------------------------------------------------------------------- compat
