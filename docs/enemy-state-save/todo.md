@@ -148,6 +148,8 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `src/states/game.lua`, `tests/test_game_resume.lua`
   - Scope: XS
 
+- [x] **A9: Review fixes C1 and R1** (found by the code review of the branch). **C1 (Critical):** A8 deleted the save on every hit, death and finished run, including autopilot (what `--smoke` plays) and daily runs, so one `--smoke` run erased the developer's real `run.json` (it did: the player's own saved run was lost during B1 to B6 verification; the suite cannot see it because it uses an in-memory filesystem). Fixed with `dropSavedRun` in `game.lua` (not autopilot, not daily) at all four sites; 8 new tests (autopilot and daily x hull hit, shield hit, death, finished run) fail without the gate; re-proved end to end: a planted `run.json` survives two real `--smoke` runs. **R1:** `get-love.ps1` deleted `-Out` recursively with no check; it now refuses anything not under `dist/` before touching anything (checked against `.`, `..`, `dist`, an absolute path outside, and `build`: all refused, nothing deleted). 721/0 headless and on LÖVE 12. Still open from the review: R2 docs (B7), R3 CI paths unproven on GitHub, O1 to O4.
+
 ### Checkpoint: Cheat closed
 - [ ] Behavioural identity passes for all seven bosses and all six enemy movement types
 - [ ] No-dodge test passes; the suite and the engine tests are green on LÖVE 12

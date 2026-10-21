@@ -70,6 +70,14 @@ local WEAPON_SFX = {
   rail = { name = "zap", vol = 1.0, pitch = 0.55 },
 }
 
+-- Delete the saved run, but only for a run that could have produced one. An autopilot run
+-- (what `--smoke` plays) and a daily run are never saved (RunSave.snapshot refuses them), so
+-- whatever is on disk belongs to a different session and is not theirs to delete.
+local function dropSavedRun(world)
+  if world.autopilot or world.daily then return end
+  Save.clearRun()
+end
+
 local function wireEvents(self, world)
   local events = world.events
 
@@ -108,7 +116,7 @@ local function wireEvents(self, world)
   events:on("shield_blocked", function()
     -- the shield took this hit: the saved run still has it ready, so reloading it would
     -- hand it back. Gone, as for a hit that costs hull (see player_damaged).
-    Save.clearRun()
+    dropSavedRun(world)
     local toasts = world.toasts
     toasts[#toasts + 1] = { text = "SHIELD DOWN", t = 0, life = 1.6 }
     Particles.burst(world, world.player.x, world.player.y, {
@@ -171,7 +179,7 @@ local function wireEvents(self, world)
     -- like a death. It is deleted, not rewritten: this runs in the middle of collision
     -- handling, where a snapshot would not be exact. The next autosave, pause,
     -- background or quit writes a fresh one.
-    Save.clearRun()
+    dropSavedRun(world)
     self.damageFlashT = 0.35
     world.hpRingT = 2.0
     Audio.play("hurt")
@@ -179,7 +187,7 @@ local function wireEvents(self, world)
 
   events:on("player_died", function()
     -- a dead run must never be resumable, even if the app is killed mid-death-anim
-    Save.clearRun()
+    dropSavedRun(world)
     world.phase = "over"
     self.deathT = 1.2
     Particles.explosion(world, world.player.x, world.player.y, 2.6, { 0.3, 0.9, 1 })
@@ -327,7 +335,7 @@ end
 local function endRun(self, won)
   if self.endedOnce then return end
   self.endedOnce = true
-  Save.clearRun() -- finished: nothing left to continue
+  dropSavedRun(self.world) -- finished: nothing left to continue
   self.summary = Progress.endRun(self.world, won)
 end
 

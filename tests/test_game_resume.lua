@@ -418,6 +418,48 @@ test("death_still_deletes_the_save_at_once", function(t)
   t.eq(Save.run(), nil)
 end)
 
+-- A run that can never be saved (autopilot, which is what `--smoke` plays, or a daily run)
+-- must never delete the saved run of another session either. Deleting on a hit once did, and
+-- one `--smoke` run on a developer machine erased the real run.json.
+for _, kind in ipairs({ "autopilot", "daily" }) do
+  local function unsaveable(seed)
+    local w = start({ seed = seed, autopilot = kind == "autopilot", daily = kind == "daily" })
+    w.player.invulnT = 0
+    Save.setRun(Support.validRun2()) -- the saved run of some earlier, separate session
+    return w
+  end
+
+  test("a_" .. kind .. "_run_taking_a_hull_hit_leaves_the_saved_run_alone", function(t)
+    local w = unsaveable(31)
+    Damage.hitPlayer(w, 5, {})
+    t.ok(Save.run(), "the other session's save survives")
+  end)
+
+  test("a_" .. kind .. "_run_having_a_shield_absorb_a_hit_leaves_the_saved_run_alone", function(t)
+    local w = unsaveable(32)
+    w.stats.shieldLevel, w.shieldT = 1, 0
+    Damage.hitPlayer(w, 5, {})
+    t.ok(w.shieldT > 0, "fixture: the shield took it")
+    t.ok(Save.run(), "the other session's save survives")
+  end)
+
+  test("a_" .. kind .. "_run_dying_leaves_the_saved_run_alone", function(t)
+    local w = unsaveable(33)
+    Damage.hitPlayer(w, 1e6, {})
+    t.eq(w.player.dead, true, "fixture: the ship died")
+    t.ok(Save.run(), "the other session's save survives")
+  end)
+
+  test("a_" .. kind .. "_run_finishing_leaves_the_saved_run_alone", function(t)
+    local w = unsaveable(34)
+    w.phase, w.zoneIndex, w.zone = "warp", #Zones, Zones[#Zones]
+    w.warpT = STEP / 2
+    step(3)
+    t.eq(w.phase, "over", "fixture: the run ended")
+    t.ok(Save.run(), "the other session's save survives")
+  end)
+end
+
 test("a_win_clears_the_save_and_counts_the_run_once", function(t)
   local w = played()
   H.Game.saveRun()

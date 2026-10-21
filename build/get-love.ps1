@@ -26,6 +26,16 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+  # -Out is deleted and recreated further down, so it must be a folder UNDER dist/: a stray
+  # `-Out .`, `-Out ..`, `-Out dist` or a drive root must never be able to wipe anything else.
+  $dist = [System.IO.Path]::GetFullPath((Join-Path $root "dist"))
+  $outFull = if ([System.IO.Path]::IsPathRooted($Out)) { [System.IO.Path]::GetFullPath($Out) }
+             else { [System.IO.Path]::GetFullPath((Join-Path $root $Out)) }
+  $prefix = $dist.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+  if (-not $outFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "-Out '$Out' is refused: it is deleted and recreated, so it must be a folder under dist/ (got $outFull)"
+  }
+
   . "$PSScriptRoot/love-version.ps1"
   if (-not $Commit) { $Commit = (Get-LoveVersion)["love_commit"] }
 

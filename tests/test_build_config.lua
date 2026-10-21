@@ -43,6 +43,19 @@ function T.get_love_defaults_to_the_commit_in_love_version(t)
   t.ok(not has(text, "Mandatory = $true)][string]$Commit"), "-Commit must be optional")
 end
 
+-- get-love.ps1 deletes and recreates -Out, so a stray `-Out .` or `-Out ..` must be refused
+-- before anything is removed. (Checked here as text; the refusal itself is exercised by
+-- running the script against a scratch folder, see docs/enemy-state-save/todo.md.)
+function T.get_love_refuses_an_out_folder_that_is_not_under_dist(t)
+  local text = assert(readFile("build/get-love.ps1"))
+  local guard = text:find("GetFullPath", 1, true)
+  t.ok(guard, "get-love.ps1 should resolve -Out to a full path before using it")
+  local firstDelete = text:find("Remove-Item", 1, true)
+  t.ok(firstDelete, "fixture: get-love.ps1 deletes -Out")
+  t.ok(guard < firstDelete, "and must check it BEFORE the first deletion")
+  t.ok(has(text, "under dist"), "and say why it refused")
+end
+
 function T.the_love_version_helper_reads_the_file_the_game_reads(t)
   local helper = assert(readFile("build/love-version.ps1"), "build/love-version.ps1 is missing")
   t.ok(has(helper, "LOVE_VERSION"), "the helper must read LOVE_VERSION")

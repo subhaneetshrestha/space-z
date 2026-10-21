@@ -115,6 +115,11 @@ Death already deletes the save the same frame (`player_died`), so dying then kil
     invulnerable) deletes nothing. The save is deleted, not rewritten, at the hit: a snapshot in the middle
     of collision handling would not be exact.
 18. **Death still deletes at once** (unchanged).
+19. **Only a run that could have been saved deletes a save.** An autopilot run (what `--smoke`
+    plays) and a daily run are never saved, so a hit, a death or a finished run in one never
+    deletes the saved run of another session (`dropSavedRun` in `game.lua`, the same predicate
+    `RunSave.snapshot` uses). Found in review: before this, one `--smoke` run on a developer
+    machine erased the real `run.json`.
 
 **What this does not close, stated plainly.** A kill before the *first* hit after a save still resumes
 that save (at most 10 s old, or exactly the pause moment). In Black Hole mode any hit is lethal, so the
