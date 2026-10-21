@@ -119,11 +119,8 @@ function M.worldView(w)
 end
 
 -- Path of the first difference between two worlds' simulation state, or nil.
--- skip: set of view keys to leave out, for state a task has not started saving yet
--- (e.g. { ebullets = true }); each task removes what it now covers.
-function M.worldDiff(a, b, skip)
+function M.worldDiff(a, b)
   local va, vb = M.worldView(a), M.worldView(b)
-  for k in pairs(skip or {}) do va[k], vb[k] = nil, nil end
   return M.firstDiff(va, vb, "world")
 end
 

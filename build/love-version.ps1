@@ -19,3 +19,13 @@ function Get-LoveVersion {
   }
   return $pin
 }
+
+# Where the pinned Windows build is mirrored (a pre-release of THIS repo, so the build outlives
+# love2d/love's 90-day CI artifacts). Both names come from the pinned commit, so a new pin
+# means a new mirror and the old one is left alone. See build/mirror-love.ps1.
+function Get-LoveMirror {
+  param([hashtable]$Pin = (Get-LoveVersion))
+
+  $short = $Pin["love_commit"].Substring(0, 7)
+  return @{ tag = "love-$short"; asset = "love-$short-win64.zip" }
+}

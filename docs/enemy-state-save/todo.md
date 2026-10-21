@@ -231,3 +231,15 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 ### Checkpoint: Complete
 - [ ] All acceptance criteria met
 - [ ] Ready for review
+
+## After the merge (PR #4, v1.1.18): open items
+
+- [x] CI jobs never run on GitHub: all of them passed on the merge (`engine`, `windows exe`, `android apk`, `publish release`), so the cross-repo artifact download works with `github.token`.
+- [x] O1 entity tests split into four files by section, which also ran 8 validation cases a shared name had been hiding (724 -> 732 tests).
+- [x] O2 the unused `skip` parameter of `worldDiff` and the `SKIP = nil` constant are gone.
+- [x] O3 Mesa pin: upstream publishes no checksum; what backs the pin (asset unchanged since 2024-10-09) and how to move it are in BUILD.md.
+- [x] LÖVE 12 desktop artifact expiry (~2026-12-19): the pinned build is mirrored as pre-release `love-b7daef0` and used first by `get-love.ps1`, checked by `love_win64_sha256` (736 tests).
+- [x] Phone: the v1.1.18 debug APK was tried on a real phone and works (the owner's check, 2026-10-21: "seems fine", so there are no numbers for the autosave hitch). It runs on the default renderer, so OpenGL ES is not forced.
+- [ ] Manual desktop checks from `SPEC.md` (a person has to play them).
+- [ ] The web build has not been seen running in a browser (headless Edge only reached the loader).
+- Accepted as is: the APK's bundled LÖVE (`792690b`) is older than the desktop pin until love-android moves its submodule; the build prints it every time.

@@ -8,6 +8,10 @@
 #                 love-android carries its own copy of LÖVE as a submodule, and moves it on its own
 #                 schedule: at this pin it bundles love2d/love 792690b (2026-07-24), which is 34
 #                 commits OLDER than love_commit. The build prints the bundled commit every time.
+# love_win64_sha256  sha256 of the mirrored copy of love_commit's Windows build: a pre-release of
+#                 this repo (tag love-<first 7 of love_commit>), because love2d/love's CI artifacts expire
+#                 after ~90 days. build/get-love.ps1 uses the mirror when present and trusts it only by
+#                 this hash. Made by build/mirror-love.ps1; a new love_commit needs a new one.
 #
 # THE ONE EXCEPTION TO "LÖVE 12": the browser build.
 # web_love        love.js has no LÖVE 12 port (upstream stops at 11.5), so the browser build runs
@@ -18,5 +22,6 @@
 love=12.0
 love_commit=b7daef0f7c1dc5888090f5d5b22d4eaf4ffd1d87
 love_android_commit=4c65fff4f8b38693aca5d91bc06f254f86a97adf
+love_win64_sha256=EF9121C786960D3D27DC496D8ED2FD38D265F09834CFACFCB9377E99D0BF848C
 web_love=11.5
 lovejs_commit=c4f04e185033a7c9fbefa9be3bec88c41a90421b
