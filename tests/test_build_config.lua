@@ -66,4 +66,57 @@ function T.the_ci_windows_job_fetches_the_pinned_build_and_caches_it(t)
   t.ok(has(windows, "actions/cache"), "the downloaded build should be cached")
 end
 
+-- ------------------------------------------------------------- engine tests in CI
+-- The Lua 5.1 suite does not touch LÖVE at all. This job runs the same suite, and a full
+-- smoke run that really renders, inside the pinned LÖVE 12, on a runner with no GPU
+-- (Mesa's software OpenGL, forced), so a LÖVE 12 problem fails the build.
+
+function T.ci_has_an_engine_job_that_runs_the_tests_and_the_smoke_run_in_love(t)
+  local engine = job("engine")
+  t.ok(has(engine, "windows-latest"), "the engine job runs on Windows, where the shipped exe's LÖVE runs")
+  t.ok(has(engine, "lovec.exe"), "it should run lovec.exe")
+  t.ok(has(engine, "--test"), "it should run the suite inside LÖVE")
+  t.ok(has(engine, "--smoke"), "it should run the smoke run")
+  t.ok(has(engine, "--renderers opengl"), "both must force OpenGL, which is what Mesa provides")
+  t.ok(has(engine, "GALLIUM_DRIVER"), "and force Mesa's CPU renderer, so a GPU on a runner cannot change the result")
+  t.ok(has(engine, "get-love.ps1"), "it runs on the pinned LÖVE")
+  t.ok(has(engine, "hashFiles('LOVE_VERSION')"), "and shares the pin-keyed cache")
+end
+
+function T.the_engine_job_pins_mesa_by_checksum(t)
+  local engine = job("engine")
+  t.ok(engine:find("MESA_SHA256:%s*['\"]?%x+['\"]?"), "the Mesa download must be pinned by sha256")
+  local sha = engine:match("MESA_SHA256:%s*['\"]?(%x+)")
+  t.eq(sha and #sha, 64, "a sha256 is 64 hex digits")
+  t.ok(has(engine, "releases/download/24.2.4"), "and by version")
+  t.ok(has(engine, "Get-FileHash"), "the download is checked against it before it is used")
+end
+
+function T.the_engine_job_fails_the_build_when_the_tests_or_the_smoke_run_fail(t)
+  local engine = job("engine")
+  local _, checks = engine:gsub("LASTEXITCODE", "")
+  t.ok(checks >= 2, "each of the two lovec runs must be checked for a non-zero exit code")
+  t.ok(has(engine, "llvmpipe"), "the log must show the run really was on the software renderer")
+end
+
+-- dist/love12 is cached under a key the windows job shares, and build-windows.ps1 ships every
+-- *.dll in it: Mesa's OpenGL must never be copied in there, or a release would carry it.
+function T.the_engine_job_keeps_mesa_out_of_the_cached_love_folder(t)
+  local engine = job("engine")
+  for line in engine:gmatch("[^\n]+") do
+    if line:find("Copy%-Item") and line:find("mesa", 1, true) then
+      t.ok(not line:find("dist/love12", 1, true), "Mesa is copied into the cached LÖVE folder: " .. line)
+    end
+  end
+  t.ok(has(engine, "dist/engine"), "the engine job should work in its own copy of the LÖVE folder")
+  t.ok(has(engine, "dist/engine/lovec.exe"), "and run lovec.exe from that copy")
+end
+
+function T.releases_wait_for_the_engine_tests(t)
+  local text = assert(readFile(".github/workflows/build.yml"))
+  local version = job("version")
+  t.ok(version:find("needs:%s*%[[^%]]*engine"), "the version job (and so every build and release after it) needs the engine job")
+  t.ok(text:find("\n  engine:\n", 1, true), "the engine job exists")
+end
+
 return T
