@@ -126,10 +126,28 @@ parameters, installs the launcher icons from `assets/icons/`, and runs the
 
 ## Web (love.js)
 
-`build/build-web.ps1` converts `space-z.love` into a static site under `dist/web` using
-[love.js](https://github.com/Davidobot/love.js) (LÖVE 11.5 compiled to WebAssembly).
+`build/build-web.ps1` converts the game into a static site under `dist/web` using
+[love.js](https://github.com/Davidobot/love.js) (LÖVE compiled to WebAssembly).
 Needs Node.js (e.g. `volta install node`); the converter is npm-installed into
 `dist/web-tools` on first run and reused after that.
+
+> **The one exception to LÖVE 12.** love.js has no LÖVE 12 port (upstream stops at 11.5, and
+> no other web port targets 12), so the browser build runs an **11.x** runtime while the
+> desktop and Android builds run the LÖVE pinned in `LOVE_VERSION`. It is kept on purpose, and
+> contained:
+> - `LOVE_VERSION` says which runtime the web build has (`web_love`) and pins the love.js
+>   commit it installs (`lovejs_commit`). The script installs exactly that commit, never
+>   love.js's default branch.
+> - The web package is its own file, `dist/space-z-web.love`, built with its own copy of
+>   `LOVE_VERSION` declaring `love=<web_love>`, so `conf.lua` tells the runtime the truth and
+>   no version-mismatch warning appears. `make-love.ps1 -LoveVersion` does this; the desktop
+>   and Android packages are never touched.
+> - The game still runs on 11.x because the only engine difference it touches goes through
+>   `src/compat.lua`.
+> - **This build is not run in CI**, so nothing guards it between uses: if it breaks, it breaks
+>   quietly. Run it before publishing.
+> - When a LÖVE 12 web port exists, set `web_love` to 12.x (and the pin to its commit), or
+>   delete the script and this section.
 
 - The **compatibility build** (`-c`, the default here) is used: it avoids
   `SharedArrayBuffer`, so the site works on itch.io, GitHub Pages, or any static host

@@ -8,6 +8,15 @@
 #                 love-android carries its own copy of LÖVE as a submodule, and moves it on its own
 #                 schedule: at this pin it bundles love2d/love 792690b (2026-07-24), which is 34
 #                 commits OLDER than love_commit. The build prints the bundled commit every time.
+#
+# THE ONE EXCEPTION TO "LÖVE 12": the browser build.
+# web_love        love.js has no LÖVE 12 port (upstream stops at 11.5), so the browser build runs
+#                 an 11.x runtime. build/build-web.ps1 packages the game with ITS OWN copy of this
+#                 file declaring love=<web_love>, so conf.lua states what that runtime really is.
+#                 Nothing else in the repo is on 11.x. Drop this when a LÖVE 12 web port exists.
+# lovejs_commit   Davidobot/love.js commit the web build installs (never its moving default branch)
 love=12.0
 love_commit=b7daef0f7c1dc5888090f5d5b22d4eaf4ffd1d87
 love_android_commit=4c65fff4f8b38693aca5d91bc06f254f86a97adf
+web_love=11.5
+lovejs_commit=c4f04e185033a7c9fbefa9be3bec88c41a90421b

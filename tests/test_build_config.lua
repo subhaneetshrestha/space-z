@@ -48,7 +48,8 @@ function T.the_love_version_helper_reads_the_file_the_game_reads(t)
   t.ok(has(helper, "LOVE_VERSION"), "the helper must read LOVE_VERSION")
   local version = assert(readFile("LOVE_VERSION"))
   for key in version:gmatch("\n([%w_]+)=") do
-    t.ok(key == "love" or key == "love_commit" or key == "love_android_commit", "unexpected key " .. key)
+    t.ok(key == "love" or key == "love_commit" or key == "love_android_commit"
+      or key == "web_love" or key == "lovejs_commit", "unexpected key " .. key)
   end
 end
 
@@ -138,6 +139,49 @@ function T.the_android_job_caches_on_the_pin_not_on_upstream_head(t)
   local android = job("android")
   t.ok(not has(android, "ls-remote"), "the cache key must not be derived from upstream HEAD")
   t.ok(has(android, "hashFiles('LOVE_VERSION')"), "the cache key should follow the pin in LOVE_VERSION")
+end
+
+-- --------------------------------------------------------- the web build: the one exception
+-- love.js has no LÖVE 12 port (it stops at 11.5), so the browser build runs an 11.x runtime.
+-- That is a deliberate, documented exception: the web package carries its own LOVE_VERSION
+-- (conf.lua declares what the runtime really is), and nothing else in the repo is on 11.x.
+
+function T.love_version_records_the_web_exception_and_pins_lovejs(t)
+  local version = assert(readFile("LOVE_VERSION"))
+  t.ok(version:match("\nweb_love=11%.%d+"), "LOVE_VERSION should say which LÖVE the web build runs (web_love)")
+  local sha = version:match("\nlovejs_commit=(%x*)")
+  t.ok(sha and #sha == 40, "LOVE_VERSION should pin the love.js commit (lovejs_commit), 40 hex digits")
+end
+
+function T.make_love_can_package_with_another_declared_version(t)
+  local text = assert(readFile("build/make-love.ps1"))
+  t.ok(has(text, "LoveVersion"), "make-love.ps1 needs a -LoveVersion to declare in the package")
+  t.ok(has(text, "$Out") or has(text, "-Out"), "and an -Out, so the web package does not replace dist/space-z.love")
+end
+
+function T.the_web_build_declares_the_runtime_it_really_has(t)
+  local text = assert(readFile("build/build-web.ps1"))
+  t.ok(has(text, "love-version.ps1"), "build-web.ps1 should read LOVE_VERSION")
+  t.ok(has(text, "web_love"), "and take the web runtime's version from web_love, not a literal")
+  t.ok(has(text, "-LoveVersion"), "it packages the game declaring that version")
+  t.ok(has(text, "space-z-web.love"), "into its own file")
+  t.ok(not has(text, "dist\\space-z.love"), "the web build must not feed love.js the desktop package")
+end
+
+function T.the_web_build_installs_a_pinned_lovejs(t)
+  local text = assert(readFile("build/build-web.ps1"))
+  t.ok(has(text, "lovejs_commit"), "build-web.ps1 should read the pinned love.js commit")
+  t.ok(not text:find("github:Davidobot/love%.js[%s\"']"), "love.js must not be installed from its default branch")
+  t.ok(has(text, "github:Davidobot/love.js#"), "it should install the pinned commit")
+end
+
+function T.the_web_exception_is_documented_in_the_script_and_in_build_md(t)
+  local script = assert(readFile("build/build-web.ps1"))
+  t.ok(script:lower():find("exception", 1, true), "build-web.ps1's header should call this an exception")
+  local docs = assert(readFile("docs/BUILD.md"))
+  local web = docs:match("## Web[^\n]*\n(.-)\n## ") or docs:match("## Web[^\n]*\n(.*)$") or ""
+  t.ok(web:lower():find("exception", 1, true), "docs/BUILD.md's web section should say it is the one exception to LÖVE 12")
+  t.ok(web:find("web_love", 1, true), "and where the version is set")
 end
 
 function T.releases_wait_for_the_engine_tests(t)
