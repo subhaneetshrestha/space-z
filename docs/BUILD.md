@@ -63,6 +63,12 @@ three OpenGL DLLs are copied beside `lovec.exe` in a *separate copy* of the LÖV
 software renderer, so a GPU a runner happens to have cannot change the result, and the log's `[renderer]` line
 (printed by `main.lua`) must say `llvmpipe` or the job fails. The smoke screenshots are kept as an artifact.
 
+The Mesa hash was taken from the download itself: its upstream (`pal1000/mesa-dist-win`) publishes no checksum.
+What backs it is that the 24.2.4 asset has not changed since it was uploaded on 2024-10-09, and that the job only
+ever runs a pinned file through the same check, so a swapped asset fails the build instead of running. Mesa never
+reaches a shipped build. To move to a newer Mesa, download the new `release-msvc` asset, check its upload date and
+that it is the one the release page lists, then update `MESA_URL` and `MESA_SHA256` together.
+
 **Getting the files:** every push to `main` publishes a
 [Release](https://github.com/subhaneetshrestha/space-z/releases) — permanent download
 links that need no account. Pull-request builds are not released; find those under the
