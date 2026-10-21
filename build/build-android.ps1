@@ -5,6 +5,10 @@
 #   pwsh build/build-android.ps1                # debug APK (installable directly)
 #   pwsh build/build-android.ps1 -Release       # unsigned release (sign before store upload)
 #   pwsh build/build-android.ps1 -AppId com.yourdomain.spacez
+#   pwsh build/build-android.ps1 -PrepareOnly   # check out the pinned love-android and patch it; no Gradle
+#
+# love-android is built at the commit pinned in LOVE_VERSION (love_android_commit), never at
+# its default branch.
 #
 # Prerequisites (checked below):
 #   - git
@@ -22,7 +26,9 @@ param(
   # single biggest lever on build time. These two cover every real Android phone;
   # add 'x86_64' when you need the APK to run on an emulator.
   [string[]]$Abis = @("armeabi-v7a", "arm64-v8a"),
-  [string]$WorkDir = "dist/android-build"
+  [string]$WorkDir = "dist/android-build",
+  # check out the pinned love-android and patch it, but stop before the Gradle build
+  [switch]$PrepareOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,15 +57,44 @@ try {
   & pwsh -NoProfile -File "build/make-love.ps1"
   if ($LASTEXITCODE -ne 0) { throw "make-love failed" }
 
-  # ---- clone / update love-android ----------------------------------------
-  # default branch = LÖVE 11.5 with the maintainers' current toolchain pins
-  # (AGP 8.13.x + Gradle 8.13, which support modern JDKs; the old 11.5a tag
-  # pinned Gradle 8.1, which fails on JDK 21+)
+  # ---- love-android, at the commit pinned in LOVE_VERSION -------------------
+  # Not the default branch: that moves on its own, and following it changed the APK between
+  # two pushes (it is how the APK ended up on LÖVE 12 while conf.lua declared an older one). The
+  # pinned commit also decides which LÖVE is built in, since love-android carries it as a
+  # submodule, so that is printed below. A tree already at the pin (a restored CI cache) is
+  # left untouched: checking it out again would give every file a new mtime and rebuild
+  # the whole native tree.
+  . "$PSScriptRoot/love-version.ps1"
+  $pin = Get-LoveVersion
+  $sha = $pin.love_android_commit
+  if (-not $sha) {
+    throw "LOVE_VERSION has no love_android_commit. Pin one: this build will not follow upstream's default branch."
+  }
   $repo = "$WorkDir/love-android"
-  if (-not (Test-Path "$repo/.git")) {
-    New-Item -ItemType Directory -Force $WorkDir | Out-Null
-    git clone --depth 1 --recurse-submodules https://github.com/love2d/love-android $repo
-    if ($LASTEXITCODE -ne 0) { throw "clone failed" }
+  $head = ""
+  if (Test-Path "$repo/.git") { $head = (git -C $repo rev-parse HEAD 2>$null) }
+  if ($head -ne $sha) {
+    if (-not (Test-Path "$repo/.git")) {
+      New-Item -ItemType Directory -Force $repo | Out-Null
+      git -C $repo init -q
+      if ($LASTEXITCODE -ne 0) { throw "git init failed" }
+      git -C $repo remote add origin https://github.com/love2d/love-android
+    }
+    git -C $repo fetch --depth 1 origin $sha
+    if ($LASTEXITCODE -ne 0) { throw "could not fetch love-android $sha" }
+    # --force drops the patches below from an older run; they are applied again afterwards
+    git -C $repo checkout --force --detach FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) { throw "could not check out love-android $sha" }
+    git -C $repo submodule update --init --recursive --depth 1 --force
+    if ($LASTEXITCODE -ne 0) { throw "could not fetch love-android's submodules" }
+  }
+  $head = (git -C $repo rev-parse HEAD)
+  if ($head -ne $sha) { throw "love-android is at $head, but LOVE_VERSION pins $sha" }
+  # `160000 commit <sha><TAB>app/src/main/cpp/love`: the LÖVE this love-android commit builds
+  $bundled = ((git -C $repo ls-tree HEAD app/src/main/cpp/love) -split "\s+")[2]
+  Write-Host "love-android pinned at $sha, bundling love2d/love $bundled"
+  if ($bundled -ne $pin.love_commit) {
+    Write-Host "NOTE: the desktop build uses love2d/love $($pin.love_commit); see LOVE_VERSION" -ForegroundColor Yellow
   }
 
   # ---- embed the game ------------------------------------------------------
@@ -126,6 +161,11 @@ try {
         }
       }
     }
+  }
+
+  if ($PrepareOnly) {
+    Write-Host "OK: love-android prepared at $sha (-PrepareOnly: no Gradle build)"
+    return
   }
 
   # ---- build ---------------------------------------------------------------

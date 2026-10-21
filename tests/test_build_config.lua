@@ -112,6 +112,34 @@ function T.the_engine_job_keeps_mesa_out_of_the_cached_love_folder(t)
   t.ok(has(engine, "dist/engine/lovec.exe"), "and run lovec.exe from that copy")
 end
 
+-- ----------------------------------------------------------------- the Android build
+-- Following love-android's default branch made the APK change under us between two pushes
+-- (it is how the APK ended up on LÖVE 12 while conf.lua said 11.5). The build now checks out
+-- the commit pinned in LOVE_VERSION.
+
+function T.love_version_pins_a_love_android_commit(t)
+  local version = assert(readFile("LOVE_VERSION"))
+  local sha = version:match("\nlove_android_commit=(%x*)")
+  t.ok(sha and #sha == 40, "LOVE_VERSION needs a full 40-character love_android_commit")
+end
+
+function T.the_android_build_checks_out_the_pinned_commit(t)
+  local text = assert(readFile("build/build-android.ps1"))
+  t.ok(has(text, "love-version.ps1"), "build-android.ps1 should read LOVE_VERSION")
+  t.ok(has(text, "love_android_commit"), "and use the pinned love-android commit")
+  t.ok(has(text, "fetch --depth 1 origin"), "it should fetch exactly that commit")
+  t.ok(not has(text, "git clone --depth 1 --recurse-submodules https://github.com/love2d/love-android"),
+    "an unpinned clone of the default branch must not come back")
+  t.ok(not has(text, "11.5"), "the stale 'LÖVE 11.5' comment about the default branch is gone")
+  t.ok(has(text, "-PrepareOnly") or has(text, "PrepareOnly"), "a prepare-only mode lets the pin be checked without a Gradle build")
+end
+
+function T.the_android_job_caches_on_the_pin_not_on_upstream_head(t)
+  local android = job("android")
+  t.ok(not has(android, "ls-remote"), "the cache key must not be derived from upstream HEAD")
+  t.ok(has(android, "hashFiles('LOVE_VERSION')"), "the cache key should follow the pin in LOVE_VERSION")
+end
+
 function T.releases_wait_for_the_engine_tests(t)
   local text = assert(readFile(".github/workflows/build.yml"))
   local version = job("version")

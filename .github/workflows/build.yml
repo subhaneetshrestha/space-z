@@ -253,16 +253,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # build-android.ps1 clones love-android unpinned, so upstream HEAD is what
-      # decides whether cached native objects are still valid.
-      - name: Resolve love-android revision
-        id: upstream
-        run: |
-          set -euo pipefail
-          sha=$(git ls-remote https://github.com/love2d/love-android HEAD | cut -f1)
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "love-android HEAD is $sha"
-
       # Of this job's ~22 min, the clone is 21s and the Gradle download 4s — the
       # rest is CMake/ninja compiling LÖVE + megasource for three ABIs into
       # app/.cxx. So caching ~/.gradle alone bought nothing; the whole love-android
@@ -270,8 +260,10 @@ jobs:
       #   app/.cxx      the object files themselves
       #   .gradle/      Gradle's up-to-date snapshots, or every task re-runs anyway
       #   .git + cpp/   restored together so ninja sees sources OLDER than objects;
-      #                 a fresh clone would give newer mtimes and rebuild the lot
-      # Keyed on upstream HEAD because that is what the native sources come from.
+      #                 a fresh checkout would give newer mtimes and rebuild the lot
+      #                 (build-android.ps1 leaves a tree already at the pin untouched)
+      # Keyed on LOVE_VERSION, which pins the love-android commit the native sources come
+      # from, so the key only changes when the pin does: it no longer follows upstream HEAD.
       # The game itself is not an input here — game.love is copied in later and
       # only invalidates the asset, dex and packaging tasks.
       - name: Restore Android build cache
@@ -282,8 +274,8 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             dist/android-build/love-android
-          key: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-${{ hashFiles('build/build-android.ps1') }}
-          restore-keys: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-
+          key: android-${{ runner.os }}-${{ hashFiles('LOVE_VERSION') }}-${{ hashFiles('build/build-android.ps1') }}
+          restore-keys: android-${{ runner.os }}-${{ hashFiles('LOVE_VERSION') }}-
 
       - name: Build APK
         shell: pwsh
@@ -306,7 +298,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             dist/android-build/love-android
-          key: android-${{ runner.os }}-${{ steps.upstream.outputs.sha }}-${{ hashFiles('build/build-android.ps1') }}
+          key: android-${{ runner.os }}-${{ hashFiles('LOVE_VERSION') }}-${{ hashFiles('build/build-android.ps1') }}
 
       - uses: actions/upload-artifact@v4
         with:

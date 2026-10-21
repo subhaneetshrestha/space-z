@@ -4,7 +4,10 @@
 #
 # love            MAJOR.MINOR that conf.lua declares (t.version); must match the runtime
 # love_commit     love2d/love commit whose CI artifacts are the desktop build (build/get-love.ps1)
-# love_android_commit  love2d/love-android commit the APK is built from (set when Android is pinned)
+# love_android_commit  love2d/love-android commit the APK is built from (build/build-android.ps1).
+#                 love-android carries its own copy of LÖVE as a submodule, and moves it on its own
+#                 schedule: at this pin it bundles love2d/love 792690b (2026-07-24), which is 34
+#                 commits OLDER than love_commit. The build prints the bundled commit every time.
 love=12.0
 love_commit=b7daef0f7c1dc5888090f5d5b22d4eaf4ffd1d87
-love_android_commit=
+love_android_commit=4c65fff4f8b38693aca5d91bc06f254f86a97adf
