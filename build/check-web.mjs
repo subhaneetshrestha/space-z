@@ -11,7 +11,9 @@
 //   * after LAUNCH the screen shows more than a flat background (the sprite atlas works).
 // Screenshots go to outDir. Exit code 0 = ok, 1 = a check failed. Not run in CI (needs a browser).
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const URL = process.argv[2] || "http://localhost:8080/";
 const OUT = process.argv[3] || "dist/web-check";
@@ -19,9 +21,13 @@ const EDGE = process.env.EDGE_PATH || "C:\\Program Files (x86)\\Microsoft\\Edge\
 const PORT = 9334;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
+// a fresh browser profile every run: the game keeps its save in the profile, and a run left
+// from an earlier check would put a CONTINUE row above LAUNCH
+const PROFILE = mkdtempSync(join(tmpdir(), "space-z-edge-"));
+const cleanup = () => { try { rmSync(PROFILE, { recursive: true, force: true }); } catch {} };
 
 const proc = spawn(EDGE, [
-  "--headless=new", `--remote-debugging-port=${PORT}`, `--user-data-dir=${OUT}/profile`,
+  "--headless=new", `--remote-debugging-port=${PORT}`, `--user-data-dir=${PROFILE}`,
   "--ignore-gpu-blocklist", "--window-size=520,1000", "about:blank",
 ], { stdio: "ignore" });
 
@@ -33,7 +39,7 @@ for (let i = 0; i < 60 && !page; i++) {
   try { page = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === "page"); } catch {}
   if (!page) await sleep(250);
 }
-if (!page) { console.log("FAIL: could not start Edge at " + EDGE); proc.kill(); process.exit(1); }
+if (!page) { console.log("FAIL: could not start Edge at " + EDGE); proc.kill(); cleanup(); process.exit(1); }
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
@@ -103,4 +109,6 @@ if (data) {
 
 console.log(problems.length ? `${problems.length} check(s) failed` : "OK: the web build starts, draws frames and shows sprites");
 ws.close(); proc.kill();
+await sleep(1000); // let Edge release the profile folder
+cleanup();
 process.exit(problems.length ? 1 : 0);
