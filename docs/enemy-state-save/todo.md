@@ -239,7 +239,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
 - [x] O2 the unused `skip` parameter of `worldDiff` and the `SKIP = nil` constant are gone.
 - [x] O3 Mesa pin: upstream publishes no checksum; what backs the pin (asset unchanged since 2024-10-09) and how to move it are in BUILD.md.
 - [x] LÖVE 12 desktop artifact expiry (~2026-12-19): the pinned build is mirrored as pre-release `love-b7daef0` and used first by `get-love.ps1`, checked by `love_win64_sha256` (736 tests).
-- [ ] Phone: install the v1.1.18 debug APK, check the version dialog is gone and that it runs on the default renderer (Vulkan). Decision: force OpenGL ES (`t.renderers = { "opengl" }` on Android) only if it misbehaves.
+- [x] Phone: the v1.1.18 debug APK was tried on a real phone and works (the owner's check, 2026-10-21: "seems fine", so there are no numbers for the autosave hitch). It runs on the default renderer, so OpenGL ES is not forced.
 - [ ] Manual desktop checks from `SPEC.md` (a person has to play them).
 - [ ] The web build has not been seen running in a browser (headless Edge only reached the loader).
 - Accepted as is: the APK's bundled LÖVE (`792690b`) is older than the desktop pin until love-android moves its submodule; the build prints it every time.
