@@ -62,8 +62,45 @@ function T.the_love_version_helper_reads_the_file_the_game_reads(t)
   local version = assert(readFile("LOVE_VERSION"))
   for key in version:gmatch("\n([%w_]+)=") do
     t.ok(key == "love" or key == "love_commit" or key == "love_android_commit"
-      or key == "web_love" or key == "lovejs_commit", "unexpected key " .. key)
+      or key == "web_love" or key == "lovejs_commit" or key == "love_win64_sha256",
+      "unexpected key " .. key)
   end
+end
+
+-- The pinned Windows build is mirrored as a release of this repo (love2d/love's artifacts
+-- expire). The mirror is trusted only by this hash, so it must be a real sha256.
+function T.love_version_pins_the_mirrored_windows_build_by_sha256(t)
+  local version = assert(readFile("LOVE_VERSION"))
+  local hash = version:match("\nlove_win64_sha256=(%x*)")
+  t.ok(hash and #hash == 64, "LOVE_VERSION needs love_win64_sha256, 64 hex digits")
+end
+
+function T.get_love_takes_the_mirror_only_if_its_hash_matches_the_pin(t)
+  local text = assert(readFile("build/get-love.ps1"))
+  local hash = text:find("love_win64_sha256", 1, true)
+  t.ok(hash, "get-love.ps1 should read the mirror's pinned hash")
+  t.ok(has(text, "Get-FileHash"), "and compute the downloaded file's")
+  local refuse = text:find("Refusing it", 1, true)
+  local unpack = text:find("Expand-Archive", 1, true)
+  t.ok(refuse and unpack and refuse < unpack, "a mismatch must throw before anything is unpacked")
+  t.ok(has(text, "-NoMirror"), "and the mirror can be skipped")
+  -- only the pinned commit's default build has a mirror
+  t.ok(has(text, '$Commit -eq $pin["love_commit"]'), "other commits never use the mirror")
+end
+
+function T.mirror_love_publishes_only_on_request_and_only_the_pinned_file(t)
+  local text = assert(readFile("build/mirror-love.ps1"), "build/mirror-love.ps1 is missing")
+  t.ok(has(text, "[switch]$Publish"), "publishing is a flag")
+  t.ok(has(text, "--latest=false") and has(text, "--prerelease"),
+    "the mirror must never become the Latest release")
+  t.ok(has(text, "love_win64_sha256"), "it refuses a zip LOVE_VERSION does not pin")
+  t.ok(has(text, "Get-LoveMirror"), "and takes the tag and asset name from the same helper as get-love.ps1")
+end
+
+function T.the_mirror_release_cannot_disturb_version_numbers_or_the_changelog(t)
+  local flow = assert(readFile(".github/workflows/build.yml"))
+  t.ok(has(flow, "grep -E '^v[0-9]+"), "the changelog picks its previous tag from v* tags only")
+  t.ok(has(flow, 'echo "tag=v$version"'), "and the version comes from VERSION and the run number")
 end
 
 function T.the_ci_windows_job_no_longer_downloads_love_11(t)

@@ -5,6 +5,7 @@
 #   pwsh build/get-love.ps1 -Commit latest               # newest green run on main (to pick a new pin)
 #   pwsh build/get-love.ps1 -Artifact love-linux-X64.AppImage -Out dist/love12-linux
 #   pwsh build/get-love.ps1 -Force                       # fetch again even if -Out already holds the commit
+#   pwsh build/get-love.ps1 -NoMirror                    # skip the mirror, fetch love2d/love's artifact
 #
 # LÖVE 12 has no release tag yet, so its desktop builds only exist as GitHub Actions
 # artifacts of the `continuous-integration` workflow. The artifact for the commit is
@@ -19,7 +20,8 @@ param(
   [string]$Out = "dist/love12",
   [string]$Artifact = "love-windows-x64",
   [string]$Repo = "love2d/love",
-  [switch]$Force
+  [switch]$Force,
+  [switch]$NoMirror
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,6 +51,39 @@ try {
 
   if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw "gh (GitHub CLI) not found — https://cli.github.com, then 'gh auth login'"
+  }
+
+  # The pinned commit's Windows build is mirrored as a release of this repo (build/mirror-love.ps1),
+  # which does not expire; it is used first and only trusted by its sha256 pin. No mirror yet
+  # (or no access to it) falls through to love2d/love's artifact; a hash mismatch is an error.
+  $pin = Get-LoveVersion
+  if (-not $NoMirror -and $Commit -eq $pin["love_commit"] -and $Artifact -eq "love-windows-x64" `
+      -and $Repo -eq "love2d/love" -and $pin["love_win64_sha256"]) {
+    $mirror = Get-LoveMirror $pin
+    $self = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY }
+            else { gh repo view --json nameWithOwner --jq .nameWithOwner 2>$null }
+    $download = "$outFull.download"
+    if (Test-Path $download) { Remove-Item $download -Recurse -Force }
+    if ($self) {
+      gh release download $mirror.tag --repo $self --pattern $mirror.asset --dir $download 2>$null
+    }
+    $zip = Join-Path $download $mirror.asset
+    if ($self -and $LASTEXITCODE -eq 0 -and (Test-Path $zip)) {
+      $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+      if ($actual -ne $pin["love_win64_sha256"].ToUpper()) {
+        Remove-Item $download -Recurse -Force
+        throw "mirror $($mirror.tag): $($mirror.asset) has sha256 $actual, LOVE_VERSION pins $($pin['love_win64_sha256']). Refusing it."
+      }
+      if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
+      New-Item -ItemType Directory -Force $Out | Out-Null
+      Expand-Archive $zip -DestinationPath $Out -Force
+      Remove-Item $download -Recurse -Force
+      Set-Content "$Out/COMMIT" $Commit -NoNewline
+      Write-Host "OK: $Out (commit $Commit, from the $($mirror.tag) mirror)"
+      return
+    }
+    if (Test-Path $download) { Remove-Item $download -Recurse -Force }
+    Write-Host "no $($mirror.tag) mirror available, using love2d/love's CI artifact"
   }
 
   $workflow = gh api "repos/$Repo/actions/workflows/main.yml" --jq .id

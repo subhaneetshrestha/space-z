@@ -26,15 +26,19 @@ repeats the number (a test fails if a doc or script does).
 |---|---|---|
 | `love` | `MAJOR.MINOR` the game declares | `conf.lua` |
 | `love_commit` | the `love2d/love` commit whose CI artifact is the desktop build | `get-love.ps1`, Windows build, CI |
+| `love_win64_sha256` | sha256 of the mirrored copy of `love_commit`'s Windows build | `get-love.ps1`, `mirror-love.ps1` |
 | `love_android_commit` | the `love2d/love-android` commit the APK is built from | `build-android.ps1`, CI cache key |
 | `web_love`, `lovejs_commit` | the browser build's runtime (the one exception) and its `love.js` commit | `build-web.ps1` |
 
 LÖVE 12 is not released yet, so its desktop builds exist only as **GitHub Actions artifacts** of `love2d/love`;
 `get-love.ps1` downloads the artifact for the pinned commit with the GitHub CLI (`gh auth login` once). Two
 consequences to know about:
-- **Artifacts expire** (about 90 days). The pinned one expires around **2026-12-19**; before that, move the pin
-  (see "Moving to a newer LÖVE") or mirror the build somewhere permanent. CI caches the download, which only
-  bridges gaps shorter than a week.
+- **Artifacts expire** (about 90 days; the pinned one around 2026-12-19), so the pinned build is also kept as a
+  **mirror**: a pre-release of this repo, tag `love-<first 7 of love_commit>` (never marked Latest, ignored by the
+  version and changelog logic, which only read `v*` tags). `get-love.ps1` uses the mirror first and trusts it only
+  by the `love_win64_sha256` pin in `LOVE_VERSION`: a different hash is an error, a missing mirror falls back to the
+  artifact (`-NoMirror` skips it). Only the pinned commit's build is mirrored. `build/mirror-love.ps1` makes it
+  (see step 2b of "Moving to a newer LÖVE").
 - **love-android carries its own LÖVE** (a submodule it updates on its own schedule). At the current pin it is
   older than `love_commit`; every Android build prints the bundled commit and notes when it differs.
 
@@ -192,6 +196,11 @@ LÖVE" today means a newer commit.
 2. **Edit `LOVE_VERSION`:** set `love` (the `MAJOR.MINOR` the game declares) and `love_commit`. Look at what
    `love_android_commit` bundles (`build-android.ps1 -PrepareOnly` prints it) and move that pin if
    love-android has caught up. Touch `web_love` only if a web port of the new LÖVE exists.
+   2b. **Mirror it** (the artifact expires): `pwsh build/get-love.ps1 -NoMirror -Force`, then
+   `pwsh build/mirror-love.ps1` packs `dist/love12` and prints the zip's sha256. Put it in `love_win64_sha256`, then
+   `pwsh build/mirror-love.ps1 -Publish` uploads that same zip as pre-release `love-<commit>` (public, a one-time
+   write: it refuses an existing tag, and a zip that is not the pinned one). Do this before the pull request
+   merges, so CI and releases take the mirror. The old mirror stays; it is the build of the old pin.
 3. **Run the tests, then run them inside the new LÖVE:** `lua tests/run.lua` (a test fails if `conf.lua`
    and `LOVE_VERSION` disagree, or any doc still names an old version), then
    `dist\love12\lovec.exe . --test` and `... --smoke` on the new build (`get-love.ps1 -Force` to refetch).

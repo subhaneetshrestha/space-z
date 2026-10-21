@@ -203,9 +203,9 @@ jobs:
       - uses: actions/checkout@v4
 
       # LÖVE 12 has no release yet: its Windows build is an artifact of love2d/love's own CI,
-      # for the commit pinned in LOVE_VERSION. Cached on that file, so a run only refetches
-      # when the pin changes (artifacts expire after about 90 days; the cache keeps the
-      # build as long as it is used at least weekly).
+      # for the commit pinned in LOVE_VERSION. That artifact expires after about 90 days, so
+      # get-love.ps1 takes this repo's mirror of it first (release love-<commit>, checked against
+      # love_win64_sha256). Cached on LOVE_VERSION, so a run only refetches when the pin changes.
       - name: Restore pinned LÖVE (win64)
         id: love
         uses: actions/cache@v4

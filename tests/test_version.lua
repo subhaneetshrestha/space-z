@@ -87,6 +87,7 @@ local SCANNED = {
   "docs/BUILD.md", "docs/ARCHITECTURE.md", "docs/PLAN.md",
   ".github/workflows/build.yml",
   "build/build-windows.ps1", "build/build-android.ps1", "build/get-love.ps1", "build/love-version.ps1",
+  "build/mirror-love.ps1",
 }
 local OLD_VERSION = { "11%.5", "11%.x", "LÖVE 11", "LOVE 11", "love%-11" }
 
