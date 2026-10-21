@@ -217,7 +217,7 @@ the `FILES` list in `tests/run.lua`. Criterion numbers refer to `SPEC.md`.
   - Files: `docs/BUILD.md`, `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `README.md`, `tests/test_version.lua`
   - Scope: M
 
-- [ ] **V1: End-to-end verification and PR**
+- [~] **V1: End-to-end verification and PR** (verification done and re-run from scratch on 2026-10-21; the PR itself is NOT opened, it waits for the owner's go-ahead. **Target settled:** `main`: PR #3 (`feature/run-save-resume`) was a normal merge and `origin/main` has the identical tree, so the PR carries exactly the 17 commits of this branch. **Re-verified:** 724/0 headless; 724/0 inside LÖVE 12 on the GPU; the CI `engine` steps run verbatim from the current workflow on Mesa llvmpipe (724/0, smoke OK, Mesa kept out of the cached folder); the pinned Windows build and the fused `SpaceZ.exe` (smoke OK, version resource 12.0); Android pin and patches via `-PrepareOnly`; the web package inside a real LÖVE 11.5 (724/0, smoke OK); every smoke run ends on `kills=381`; the real `run.json` location was checked before and after and was never created or deleted; a scan of the diff found no secrets and no personal paths. **Not done, needs a person:** the manual desktop and Android checks, the CI run on GitHub, the phone. PR text: written, waiting for review.)
   - Description: Run every spec criterion and manual check, on desktop and on the phone. Ask whether `feature/run-save-resume` should merge into `main` first, then open the PR.
   - Acceptance:
     - [ ] All 16 criteria pass; the manual checks in `SPEC.md` are done on desktop and Android.
