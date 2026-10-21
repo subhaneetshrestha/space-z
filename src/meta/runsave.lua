@@ -1,8 +1,9 @@
 -- src/meta/runsave.lua — snapshot and validation of an in-progress run.
 -- Pure data: no love.* calls, so it runs headless under tests/run.lua.
--- Version 2 also holds the player (position, velocity, i-frames), the running timers
--- and every weapon's cooldown. Enemies, bullets, pickups and the boss are not saved
--- yet, so every snapshot still resumes in the "waves" phase.
+-- Version 2 holds the whole live moment: progression and build, the player (position,
+-- velocity, i-frames), the running timers, every weapon's cooldown, and the field (enemies,
+-- bullets, pickups, drones, the boss and the phase). Capture and validation of the field
+-- live in runsave_entities.lua. A version 1 save (progression and build only) still loads.
 local RNG = require("src.core.rng")
 local Viewport = require("src.core.viewport")
 local Entities = require("src.meta.runsave_entities")

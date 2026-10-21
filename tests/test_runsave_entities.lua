@@ -360,8 +360,8 @@ end
 -- ============================================================ bullets (A3)
 -- Player bullets (with a homing missile's target) and enemy bullets.
 
--- Enemies that take hits but never die: kills drop pickups, which are not saved until
--- A4, and collecting them would change the xp. Wraps Spawner.spawnEnemy, which the
+-- Enemies that take hits but never die: kills drop pickups, and collecting
+-- them would change the xp. Wraps Spawner.spawnEnemy, which the
 -- spawner and the boss adds call through the module table, so every enemy is covered.
 local function withDurableEnemies(fn)
   local original = Spawner.spawnEnemy
