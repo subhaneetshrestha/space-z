@@ -68,3 +68,23 @@ no-argument `SpriteBatch:setColor()` (the game always passes four numbers, `spri
    unpacked build once as an asset on a GitHub Release of this repository and download that instead (permanent, and it still names the commit).
    I recommend (b); it will be raised with you in B3 before it is built.
 3. **B4:** Windows runners have GL (upstream's own CI uses them), so the engine-test job can start on `windows-latest` rather than trying Linux with a virtual display first.
+
+## Vulkan frame pacing on the Windows desktop (found 2026-10-21)
+
+A desktop playtest of the LÖVE 12 build felt sluggish. The average frame rate was fine, the pacing was not.
+One autopilot run (seed 12345), real time, vsync on a 75 Hz display, 30 s after a 3 s warm-up, RTX 3060 laptop GPU:
+
+| Build | fps | frame ms p50 / p95 / p99 | worst frame |
+|---|---|---|---|
+| old code, LÖVE 11.5 (OpenGL) | 75.0 | 13.3 / 14.2 / 14.6 | 25.6 ms |
+| new code, LÖVE 11.5 (OpenGL) | 75.0 | 13.3 / 14.2 / 14.6 | 16.2 ms |
+| new code, LÖVE 12 default (**Vulkan**) | 74.8 and 75.0 | 7.0 / 25.5 / 25.8 and 5.9 / 25.5 / 25.8 | 63.6 and 36.1 ms |
+| new code, LÖVE 12 `--renderers opengl` | 75.0 | 13.3 / 13.9 / 14.1 | 20.9 ms |
+| new code, LÖVE 12 with `t.renderers = { "opengl" }` in conf.lua | 75.0 | 13.3 / 13.9 / 14.1 | 14.7 ms |
+
+Under Vulkan frames arrive in pairs (about 6 ms, then 26 ms): the same average, visibly uneven. CPU time per
+frame was the same everywhere (update 0.04-0.08 ms, draw 0.23-0.27 ms), so the game code is not involved; the
+run-save changes cannot show up here either, because an autopilot run is never saved. It repeated on a second
+Vulkan run. `conf.lua` now asks for OpenGL on Windows only (`love._os`); Android is left on LÖVE's own choice
+because the phone check of the APK was fine, and the CI `engine` job already forces OpenGL.
+The benchmark was a scratch harness (a `--bench` mode appended to `main.lua` in a copy), not part of the game.

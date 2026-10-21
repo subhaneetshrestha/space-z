@@ -42,9 +42,9 @@ end
 
 -- conf.lua is run in a sandbox: its love.conf must not replace the live one, and
 -- love.filesystem.read is served from disk the way LÖVE serves it from the game folder.
-local function runConf(readFn)
+local function runConf(readFn, os)
   local chunk = assert(loadfile("conf.lua"))
-  local stubLove = { filesystem = { read = readFn } }
+  local stubLove = { filesystem = { read = readFn }, _os = os }
   setfenv(chunk, setmetatable({ love = stubLove }, { __index = _G }))
   chunk()
   local t = { window = {}, modules = {} }
@@ -63,6 +63,24 @@ function T.conf_leaves_the_version_unset_when_the_file_cannot_be_read(t)
   local conf = runConf(function() return nil end)
   t.eq(conf.version, nil)
   t.eq(conf.identity, "space-z", "the rest of the config is unaffected")
+end
+
+-- LÖVE 12 draws through Vulkan by default. On the Windows desktop that paced frames
+-- unevenly (about 7 ms then 26 ms, worst frame 64 ms, at an average of 75 fps) where OpenGL
+-- holds a steady 13.3 ms (docs/enemy-state-save/love12-findings.md), so Windows asks for
+-- OpenGL. Other platforms keep LÖVE's own choice: the Android phone check was fine as is.
+function T.conf_asks_for_opengl_on_windows(t)
+  local conf = runConf(readFile, "Windows")
+  t.ok(type(conf.renderers) == "table", "t.renderers must be set")
+  t.eq(#(conf.renderers or {}), 1, "OpenGL only, no fallback to Vulkan")
+  t.eq((conf.renderers or {})[1], "opengl")
+end
+
+function T.conf_leaves_the_renderer_to_love_everywhere_else(t)
+  t.eq(runConf(readFile, "Android").renderers, nil, "Android")
+  t.eq(runConf(readFile, "OS X").renderers, nil, "macOS")
+  t.eq(runConf(readFile, "Linux").renderers, nil, "Linux")
+  t.eq(runConf(readFile, nil).renderers, nil, "a runtime that does not say")
 end
 
 -- ------------------------------------------------------------------- compat
