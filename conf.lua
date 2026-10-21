@@ -16,6 +16,17 @@ function love.conf(t)
   t.window.resizable = true
   t.window.vsync = 1
 
+  -- LÖVE 12 defaults to Vulkan, which on the Windows desktop paces frames unevenly (7 ms,
+  -- then 26 ms; worst 64 ms) where OpenGL holds a steady frame time. So Windows allows OpenGL
+  -- only. The list is the set LÖVE may pick from, not an order of preference (with both entries
+  -- it still picks Vulkan), so there is no fallback: a PC without OpenGL 3.3 cannot start the
+  -- game (every earlier release needed it too). Other platforms keep LÖVE's own choice. `love._os` exists
+  -- before the modules load; a runtime without t.graphics.renderers ignores the field.
+  if love._os == "Windows" then
+    t.graphics = t.graphics or {}
+    t.graphics.renderers = { "opengl" }
+  end
+
   -- unused modules off for startup speed
   t.modules.joystick = false
   t.modules.physics = false
